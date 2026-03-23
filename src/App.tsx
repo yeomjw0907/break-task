@@ -43,7 +43,7 @@ import {
   type Locale,
   uiCopy,
 } from '@/copy'
-import { seedCompletions, seedDailyScores, seedHighScore, seedProfile, seedTasks } from '@/data/seed'
+import { seedProfile } from '@/data/seed'
 import { calculateDailyScore, calculateTaskScore, createDailyReport, updateHighScore } from '@/lib/scoring'
 import { cn } from '@/lib/utils'
 import type {
@@ -67,12 +67,24 @@ type TimerState = {
 }
 
 const STORAGE_KEYS = {
-  tasks: 'taskbrick.tasks',
-  completions: 'taskbrick.completions',
-  dailyScores: 'taskbrick.dailyScores',
-  highScore: 'taskbrick.highScore',
-  profile: 'taskbrick.profile',
+  tasks: 'taskbrick.v2.tasks',
+  completions: 'taskbrick.v2.completions',
+  dailyScores: 'taskbrick.v2.dailyScores',
+  highScore: 'taskbrick.v2.highScore',
+  profile: 'taskbrick.v2.profile',
   locale: 'taskbrick.locale',
+}
+
+const EMPTY_TASKS: Task[] = []
+const EMPTY_COMPLETIONS: TaskCompletion[] = []
+const EMPTY_DAILY_SCORES: DailyScore[] = []
+const EMPTY_HIGH_SCORE = 0
+const EMPTY_PROFILE: UserProfile = {
+  ...seedProfile,
+  currentStreak: 0,
+  bestStreak: 0,
+  lifetimeScore: 0,
+  level: 1,
 }
 
 const priorityOptions: TaskPriority[] = ['low', 'medium', 'high', 'critical']
@@ -221,18 +233,18 @@ function getPriorityHint(priority: TaskPriority, locale: Locale): string {
 }
 
 function App() {
-  const [tasks, setTasks] = useState<Task[]>(() => loadStoredValue(STORAGE_KEYS.tasks, seedTasks))
+  const [tasks, setTasks] = useState<Task[]>(() => loadStoredValue(STORAGE_KEYS.tasks, EMPTY_TASKS))
   const [completions, setCompletions] = useState<TaskCompletion[]>(() =>
-    loadStoredValue(STORAGE_KEYS.completions, seedCompletions),
+    loadStoredValue(STORAGE_KEYS.completions, EMPTY_COMPLETIONS),
   )
   const [dailyScores, setDailyScores] = useState<DailyScore[]>(() =>
-    loadStoredValue(STORAGE_KEYS.dailyScores, seedDailyScores),
+    loadStoredValue(STORAGE_KEYS.dailyScores, EMPTY_DAILY_SCORES),
   )
   const [highScore, setHighScore] = useState<number>(() =>
-    loadStoredValue(STORAGE_KEYS.highScore, seedHighScore),
+    loadStoredValue(STORAGE_KEYS.highScore, EMPTY_HIGH_SCORE),
   )
   const [profile, setProfile] = useState<UserProfile>(() =>
-    loadStoredValue(STORAGE_KEYS.profile, seedProfile),
+    loadStoredValue(STORAGE_KEYS.profile, EMPTY_PROFILE),
   )
   const [locale, setLocale] = useState<Locale>(() => loadStoredValue(STORAGE_KEYS.locale, 'ko'))
   const [currentView, setCurrentView] = useState<ViewMode>('today')
@@ -566,11 +578,30 @@ function App() {
 
   function resetBoard() {
     startTransition(() => {
-      setTasks(seedTasks.map((task) => ({ ...task })))
-      setCompletions(seedCompletions.map((completion) => ({ ...completion })))
-      setDailyScores(seedDailyScores.map((score) => ({ ...score })))
-      setHighScore(seedHighScore)
-      setProfile({ ...seedProfile })
+      setTasks(EMPTY_TASKS)
+      setCompletions(EMPTY_COMPLETIONS)
+      setDailyScores(EMPTY_DAILY_SCORES)
+      setHighScore(EMPTY_HIGH_SCORE)
+      setProfile({ ...EMPTY_PROFILE })
+      setActiveTimer(null)
+      setRewardBurst(null)
+      setCurrentView('today')
+      setStatusFilter('all')
+      setPriorityFilter('all')
+      setSearch('')
+      setDraftTitle('')
+      setDraftMinutes(25)
+      setDraftPriority('medium')
+    })
+  }
+
+  function clearAll() {
+    startTransition(() => {
+      setTasks(EMPTY_TASKS)
+      setCompletions(EMPTY_COMPLETIONS)
+      setDailyScores(EMPTY_DAILY_SCORES)
+      setHighScore(EMPTY_HIGH_SCORE)
+      setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setRewardBurst(null)
       setCurrentView('today')
@@ -718,6 +749,9 @@ function App() {
                       {copy.demoSyncLabel}
                     </Button>
                   ) : null}
+                  <Button size="sm" variant="destructive" onClick={clearAll}>
+                    {copy.clearAll}
+                  </Button>
                   <Button size="sm" variant="outline" onClick={resetBoard}>
                     <RefreshCcw className="size-3.5" />
                     {copy.resetBoard}
