@@ -76,6 +76,7 @@ type NextTaskPromptState = {
 
 type PausedSession = TimerState & {
   mode: 'switch' | 'interrupt'
+  pausedAt: string
 }
 
 type SwitchPromptState = {
@@ -84,12 +85,19 @@ type SwitchPromptState = {
   source: 'new' | 'resume'
 }
 
+type FlowEvent = {
+  id: string
+  type: 'switch' | 'interrupt' | 'resume'
+  at: string
+}
+
 const STORAGE_KEYS = {
   tasks: 'taskbrick.v2.tasks',
   completions: 'taskbrick.v2.completions',
   dailyScores: 'taskbrick.v2.dailyScores',
   highScore: 'taskbrick.v2.highScore',
   profile: 'taskbrick.v2.profile',
+  flowEvents: 'taskbrick.v2.flowEvents',
   locale: 'taskbrick.locale',
 }
 
@@ -97,6 +105,7 @@ const EMPTY_TASKS: Task[] = []
 const EMPTY_COMPLETIONS: TaskCompletion[] = []
 const EMPTY_DAILY_SCORES: DailyScore[] = []
 const EMPTY_HIGH_SCORE = 0
+const EMPTY_FLOW_EVENTS: FlowEvent[] = []
 const EMPTY_PROFILE: UserProfile = {
   ...seedProfile,
   currentStreak: 0,
@@ -243,6 +252,16 @@ function getPausedSessionLabel(mode: PausedSession['mode'], locale: Locale): str
   return mode === 'interrupt' ? 'Interrupted' : 'Switched'
 }
 
+function createFlowEvent(type: FlowEvent['type']): FlowEvent {
+  const now = new Date().toISOString()
+
+  return {
+    id: `flow-${type}-${now.replaceAll(/[:.]/g, '-')}`,
+    type,
+    at: now,
+  }
+}
+
 function formatClock(seconds: number): string {
   const safeSeconds = Math.max(0, seconds)
   const hours = Math.floor(safeSeconds / 3600)
@@ -305,6 +324,9 @@ function App() {
   const [highScore, setHighScore] = useState<number>(() =>
     loadStoredValue(STORAGE_KEYS.highScore, EMPTY_HIGH_SCORE),
   )
+  const [flowEvents, setFlowEvents] = useState<FlowEvent[]>(() =>
+    loadStoredValue(STORAGE_KEYS.flowEvents, EMPTY_FLOW_EVENTS),
+  )
   const [profile, setProfile] = useState<UserProfile>(() =>
     loadStoredValue(STORAGE_KEYS.profile, EMPTY_PROFILE),
   )
@@ -329,6 +351,9 @@ function App() {
   const todayCompletions = completions.filter(
     (completion) => getDateKey(completion.completedAt, profile.timezone) === todayKey,
   )
+  const todayFlowEvents = flowEvents.filter((event) => getDateKey(event.at, profile.timezone) === todayKey)
+  const todaySwitchCount = todayFlowEvents.filter((event) => event.type !== 'resume').length
+  const todayInterruptCount = todayFlowEvents.filter((event) => event.type === 'interrupt').length
 
   const todayScore =
     dailyScores.find((score) => score.date === todayKey) ??
@@ -346,6 +371,14 @@ function App() {
     ? tasks.find((task) => task.id === nextTaskPrompt.nextTaskId) ?? null
     : null
   const pausedTaskDetails = pausedSessions
+    .slice()
+    .sort((left, right) => {
+      if (left.mode !== right.mode) {
+        return left.mode === 'interrupt' ? -1 : 1
+      }
+
+      return new Date(right.pausedAt).getTime() - new Date(left.pausedAt).getTime()
+    })
     .map((session) => ({
       session,
       task: tasks.find((task) => task.id === session.taskId) ?? null,
@@ -434,8 +467,9 @@ function App() {
     window.localStorage.setItem(STORAGE_KEYS.completions, JSON.stringify(completions))
     window.localStorage.setItem(STORAGE_KEYS.dailyScores, JSON.stringify(dailyScores))
     window.localStorage.setItem(STORAGE_KEYS.highScore, JSON.stringify(highScore))
+    window.localStorage.setItem(STORAGE_KEYS.flowEvents, JSON.stringify(flowEvents))
     window.localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile))
-  }, [completions, dailyScores, highScore, profile, tasks])
+  }, [completions, dailyScores, flowEvents, highScore, profile, tasks])
 
   const playRewardSound = useEffectEvent((nextReward: RewardBurst) => {
     const AudioCtx =
@@ -612,6 +646,7 @@ function App() {
       setPausedSessions((current) =>
         current.filter((session) => session.taskId !== promptedNextTask.id),
       )
+      setFlowEvents((current) => [...current, createFlowEvent('resume')])
       setActiveTimer({
         taskId: pausedSession.taskId,
         estimatedMinutes: pausedSession.estimatedMinutes,
@@ -629,18 +664,21 @@ function App() {
   function commitTaskSwitch(mode: 'switch' | 'interrupt') {
     if (!switchPrompt || !activeTimer) return
     const resumeSession = pausedSessions.find((session) => session.taskId === switchPrompt.nextTaskId)
+    const switchedAt = new Date().toISOString()
 
     setPausedSessions((current) => [
       {
         ...activeTimer,
         isPaused: true,
         mode,
+        pausedAt: switchedAt,
       },
       ...current.filter(
         (session) =>
           session.taskId !== activeTimer.taskId && session.taskId !== switchPrompt.nextTaskId,
       ),
     ])
+    setFlowEvents((current) => [...current, createFlowEvent(mode)])
 
     setActiveTimer({
       taskId: switchPrompt.nextTaskId,
@@ -650,8 +688,15 @@ function App() {
     })
     setTasks((current) =>
       current.map((task) =>
-        task.id === switchPrompt.nextTaskId && task.status === 'todo'
-          ? { ...task, status: 'in_progress' }
+        task.id === switchPrompt.nextTaskId
+          ? {
+              ...task,
+              status: task.status === 'todo' ? 'in_progress' : task.status,
+              tags:
+                mode === 'interrupt' && !task.tags.includes('interrupt')
+                  ? [...task.tags, 'interrupt']
+                  : task.tags,
+            }
           : task,
       ),
     )
@@ -674,6 +719,7 @@ function App() {
     }
 
     setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
+    setFlowEvents((current) => [...current, createFlowEvent('resume')])
     setActiveTimer({
       taskId: pausedSession.taskId,
       estimatedMinutes: pausedSession.estimatedMinutes,
@@ -779,6 +825,7 @@ function App() {
       setCompletions(EMPTY_COMPLETIONS)
       setDailyScores(EMPTY_DAILY_SCORES)
       setHighScore(EMPTY_HIGH_SCORE)
+      setFlowEvents(EMPTY_FLOW_EVENTS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -802,6 +849,7 @@ function App() {
       setCompletions(EMPTY_COMPLETIONS)
       setDailyScores(EMPTY_DAILY_SCORES)
       setHighScore(EMPTY_HIGH_SCORE)
+      setFlowEvents(EMPTY_FLOW_EVENTS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -1320,10 +1368,18 @@ function App() {
                 {copy.reportSentence(todayReport.completedCount, todayReport.totalScore)}
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-5">
                 <MetricSurface label={copy.focusMinutes} value={`${todayReport.focusMinutes}m`} />
                 <MetricSurface label={copy.onTime} value={todayReport.onTimeCount.toString()} />
                 <MetricSurface label={copy.overtime} value={todayReport.overtimeCount.toString()} />
+                <MetricSurface
+                  label={locale === 'ko' ? '전환' : 'Switches'}
+                  value={todaySwitchCount.toString()}
+                />
+                <MetricSurface
+                  label={locale === 'ko' ? '끼어들기' : 'Interrupts'}
+                  value={todayInterruptCount.toString()}
+                />
               </div>
 
               <Separator />
@@ -1659,6 +1715,11 @@ function TaskRow({
           <Badge variant="outline" className="border-white/10 text-zinc-300">
             {getPriorityLabel(task.priority, locale)}
           </Badge>
+          {task.tags.includes('interrupt') ? (
+            <Badge variant="outline" className="border-amber-300/20 bg-amber-300/10 text-amber-200">
+              {locale === 'ko' ? '끼어들기' : 'Interrupt'}
+            </Badge>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
