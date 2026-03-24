@@ -71,6 +71,17 @@ type TimerState = {
 type NextTaskPromptState = {
   completedTaskTitle: string
   nextTaskId: string
+  kind: 'resume' | 'next'
+}
+
+type PausedSession = TimerState & {
+  mode: 'switch' | 'interrupt'
+}
+
+type SwitchPromptState = {
+  nextTaskId: string
+  estimatedMinutes: number
+  source: 'new' | 'resume'
 }
 
 const STORAGE_KEYS = {
@@ -224,6 +235,14 @@ function getNextTaskSuggestion(tasks: Task[], completedTaskId: string): Task | n
   return available[0] ?? null
 }
 
+function getPausedSessionLabel(mode: PausedSession['mode'], locale: Locale): string {
+  if (locale === 'ko') {
+    return mode === 'interrupt' ? '끼어들기' : '전환됨'
+  }
+
+  return mode === 'interrupt' ? 'Interrupted' : 'Switched'
+}
+
 function formatClock(seconds: number): string {
   const safeSeconds = Math.max(0, seconds)
   const hours = Math.floor(safeSeconds / 3600)
@@ -298,9 +317,11 @@ function App() {
   const [draftPriority, setDraftPriority] = useState<TaskPriority>('medium')
   const [draftMinutes, setDraftMinutes] = useState(25)
   const [activeTimer, setActiveTimer] = useState<TimerState | null>(null)
+  const [pausedSessions, setPausedSessions] = useState<PausedSession[]>([])
   const [isDockCollapsed, setIsDockCollapsed] = useState(false)
   const [rewardBurst, setRewardBurst] = useState<RewardBurst | null>(null)
   const [nextTaskPrompt, setNextTaskPrompt] = useState<NextTaskPromptState | null>(null)
+  const [switchPrompt, setSwitchPrompt] = useState<SwitchPromptState | null>(null)
 
   const copy = uiCopy[locale]
   const deferredSearch = useDeferredValue(search)
@@ -324,6 +345,12 @@ function App() {
   const promptedNextTask = nextTaskPrompt
     ? tasks.find((task) => task.id === nextTaskPrompt.nextTaskId) ?? null
     : null
+  const pausedTaskDetails = pausedSessions
+    .map((session) => ({
+      session,
+      task: tasks.find((task) => task.id === session.taskId) ?? null,
+    }))
+    .filter((item): item is { session: PausedSession; task: Task } => Boolean(item.task))
   const elapsedMinutes = activeTimer ? Math.max(1, Math.ceil(activeTimer.elapsedSeconds / 60)) : 0
   const elapsedClock = activeTimer ? formatClock(activeTimer.elapsedSeconds) : '00:00'
   const estimateClock = activeTimer ? formatClock(activeTimer.estimatedMinutes * 60) : '00:00'
@@ -466,6 +493,7 @@ function App() {
     const task = tasks.find((candidate) => candidate.id === taskId)
     if (!task || task.status === 'done') return
     const suggestedNextTask = getNextTaskSuggestion(tasks, taskId)
+    const pausedCandidate = pausedSessions[0] ?? null
 
     const completedAt = new Date().toISOString()
     const actualMinutes =
@@ -524,10 +552,17 @@ function App() {
         highScore: nextDailyScore.totalScore > highScore,
       })
       setNextTaskPrompt(
-        suggestedNextTask
+        pausedCandidate
+          ? {
+              completedTaskTitle: getTaskTitle(task, locale),
+              nextTaskId: pausedCandidate.taskId,
+              kind: 'resume',
+            }
+          : suggestedNextTask
           ? {
               completedTaskTitle: getTaskTitle(task, locale),
               nextTaskId: suggestedNextTask.id,
+              kind: 'next',
             }
           : null,
       )
@@ -536,8 +571,18 @@ function App() {
   }
 
   function handleStartTimer(taskId: string, estimatedMinutes: number) {
+    if (activeTimer && activeTimer.taskId !== taskId) {
+      setSwitchPrompt({
+        nextTaskId: taskId,
+        estimatedMinutes,
+        source: pausedSessions.some((session) => session.taskId === taskId) ? 'resume' : 'new',
+      })
+      return
+    }
+
     setIsDockCollapsed(false)
     setNextTaskPrompt(null)
+    setSwitchPrompt(null)
     setActiveTimer({
       taskId,
       estimatedMinutes,
@@ -545,6 +590,7 @@ function App() {
       isPaused: false,
     })
 
+    setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
     setTasks((current) =>
       current.map((task) =>
         task.id === taskId && task.status === 'todo'
@@ -560,8 +606,88 @@ function App() {
       return
     }
 
-    handleStartTimer(promptedNextTask.id, promptedNextTask.estimatedMinutes)
+    const pausedSession = pausedSessions.find((session) => session.taskId === promptedNextTask.id)
+
+    if (pausedSession) {
+      setPausedSessions((current) =>
+        current.filter((session) => session.taskId !== promptedNextTask.id),
+      )
+      setActiveTimer({
+        taskId: pausedSession.taskId,
+        estimatedMinutes: pausedSession.estimatedMinutes,
+        elapsedSeconds: pausedSession.elapsedSeconds,
+        isPaused: false,
+      })
+      setIsDockCollapsed(false)
+    } else {
+      handleStartTimer(promptedNextTask.id, promptedNextTask.estimatedMinutes)
+    }
+
     setNextTaskPrompt(null)
+  }
+
+  function commitTaskSwitch(mode: 'switch' | 'interrupt') {
+    if (!switchPrompt || !activeTimer) return
+    const resumeSession = pausedSessions.find((session) => session.taskId === switchPrompt.nextTaskId)
+
+    setPausedSessions((current) => [
+      {
+        ...activeTimer,
+        isPaused: true,
+        mode,
+      },
+      ...current.filter(
+        (session) =>
+          session.taskId !== activeTimer.taskId && session.taskId !== switchPrompt.nextTaskId,
+      ),
+    ])
+
+    setActiveTimer({
+      taskId: switchPrompt.nextTaskId,
+      estimatedMinutes: resumeSession?.estimatedMinutes ?? switchPrompt.estimatedMinutes,
+      elapsedSeconds: resumeSession?.elapsedSeconds ?? 0,
+      isPaused: false,
+    })
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === switchPrompt.nextTaskId && task.status === 'todo'
+          ? { ...task, status: 'in_progress' }
+          : task,
+      ),
+    )
+    setSwitchPrompt(null)
+    setNextTaskPrompt(null)
+    setIsDockCollapsed(false)
+  }
+
+  function handleResumePausedTask(taskId: string) {
+    const pausedSession = pausedSessions.find((session) => session.taskId === taskId)
+    if (!pausedSession) return
+
+    if (activeTimer && activeTimer.taskId !== taskId) {
+      setSwitchPrompt({
+        nextTaskId: taskId,
+        estimatedMinutes: pausedSession.estimatedMinutes,
+        source: 'resume',
+      })
+      return
+    }
+
+    setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
+    setActiveTimer({
+      taskId: pausedSession.taskId,
+      estimatedMinutes: pausedSession.estimatedMinutes,
+      elapsedSeconds: pausedSession.elapsedSeconds,
+      isPaused: false,
+    })
+    setIsDockCollapsed(false)
+    setNextTaskPrompt(null)
+  }
+
+  function handleRemovePausedTask(taskId: string) {
+    setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
+    setNextTaskPrompt((current) => (current?.nextTaskId === taskId ? null : current))
+    setSwitchPrompt((current) => (current?.nextTaskId === taskId ? null : current))
   }
 
   function handleAddTask(event: FormEvent<HTMLFormElement>) {
@@ -641,6 +767,7 @@ function App() {
         lifetimeScore: Math.max(0, current.lifetimeScore - removedCompletionScore),
         level: 1 + Math.floor(Math.max(0, current.lifetimeScore - removedCompletionScore) / 700),
       }))
+      setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
       setNextTaskPrompt((current) => (current?.nextTaskId === taskId ? null : current))
       setActiveTimer((current) => (current?.taskId === taskId ? null : current))
     })
@@ -654,9 +781,11 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
+      setPausedSessions([])
       setIsDockCollapsed(false)
       setRewardBurst(null)
       setNextTaskPrompt(null)
+      setSwitchPrompt(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -675,9 +804,11 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
+      setPausedSessions([])
       setIsDockCollapsed(false)
       setRewardBurst(null)
       setNextTaskPrompt(null)
+      setSwitchPrompt(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -1127,6 +1258,54 @@ function App() {
                   <p className="mt-2 text-sm leading-relaxed text-zinc-500">{copy.timerIdleBody}</p>
                 </div>
               )}
+
+              {pausedTaskDetails.length > 0 ? (
+                <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-white">
+                      {locale === 'ko' ? '멈춘 작업' : 'Paused tasks'}
+                    </p>
+                    <Badge variant="outline" className="border-white/10 text-zinc-300">
+                      {pausedTaskDetails.length}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {pausedTaskDetails.slice(0, 3).map(({ session, task }) => (
+                      <div
+                        key={session.taskId}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-zinc-950/60 p-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-white">
+                            {getTaskTitle(task, locale)}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {formatClock(session.elapsedSeconds)} /{' '}
+                            {getPausedSessionLabel(session.mode, locale)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleResumePausedTask(session.taskId)}
+                          >
+                            {locale === 'ko' ? '복귀' : 'Resume'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRemovePausedTask(session.taskId)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1293,9 +1472,13 @@ function App() {
               {locale === 'ko' ? '다음 할 일' : 'Next up'}
             </p>
             <p className="mt-3 text-lg font-semibold text-white">
-              {locale === 'ko'
-                ? `'${nextTaskPrompt.completedTaskTitle}' 완료. 이 작업을 바로 시작할까요?`
-                : `Finished '${nextTaskPrompt.completedTaskTitle}'. Start this next?`}
+              {nextTaskPrompt.kind === 'resume'
+                ? locale === 'ko'
+                  ? `'${nextTaskPrompt.completedTaskTitle}' 완료. 멈춘 작업으로 돌아갈까요?`
+                  : `Finished '${nextTaskPrompt.completedTaskTitle}'. Resume the paused task?`
+                : locale === 'ko'
+                  ? `'${nextTaskPrompt.completedTaskTitle}' 완료. 이 작업을 바로 시작할까요?`
+                  : `Finished '${nextTaskPrompt.completedTaskTitle}'. Start this next?`}
             </p>
 
             <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-4">
@@ -1311,9 +1494,13 @@ function App() {
                 {getTaskTitle(promptedNextTask, locale)}
               </p>
               <p className="mt-2 text-sm text-zinc-500">
-                {locale === 'ko'
-                  ? `예상 ${promptedNextTask.estimatedMinutes}분`
-                  : `Estimate ${promptedNextTask.estimatedMinutes}m`}
+                {nextTaskPrompt.kind === 'resume'
+                  ? locale === 'ko'
+                    ? `이전 경과 ${formatClock(pausedSessions.find((session) => session.taskId === promptedNextTask.id)?.elapsedSeconds ?? 0)}`
+                    : `Previous elapsed ${formatClock(pausedSessions.find((session) => session.taskId === promptedNextTask.id)?.elapsedSeconds ?? 0)}`
+                  : locale === 'ko'
+                    ? `예상 ${promptedNextTask.estimatedMinutes}분`
+                    : `Estimate ${promptedNextTask.estimatedMinutes}m`}
               </p>
             </div>
 
@@ -1323,6 +1510,41 @@ function App() {
               </Button>
               <Button onClick={handleStartSuggestedTask}>
                 {locale === 'ko' ? '바로 시작' : 'Start now'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {switchPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950/95 p-5 shadow-2xl">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+              {locale === 'ko' ? '작업 전환' : 'Switch task'}
+            </p>
+            <p className="mt-3 text-lg font-semibold text-white">
+              {locale === 'ko'
+                ? '지금 작업을 멈추고 다른 작업으로 이동할까요?'
+                : 'Pause the current task and move to another one?'}
+            </p>
+            <p className="mt-2 text-sm text-zinc-500">
+              {locale === 'ko'
+                ? '전환은 멈춘 작업 목록에 보관되고, 끼어들기는 잠깐 처리할 일로 기록됩니다.'
+                : 'Switch keeps it in the paused list. Interrupt marks it as a quick interruption.'}
+            </p>
+
+            <div className="mt-5 grid gap-2">
+              <Button variant="outline" onClick={() => commitTaskSwitch('switch')}>
+                {locale === 'ko' ? '일시정지 후 전환' : 'Pause and switch'}
+              </Button>
+              <Button variant="secondary" onClick={() => commitTaskSwitch('interrupt')}>
+                {locale === 'ko' ? '끼어들기 작업으로 시작' : 'Start as interruption'}
+              </Button>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <Button variant="ghost" onClick={() => setSwitchPrompt(null)}>
+                {locale === 'ko' ? '취소' : 'Cancel'}
               </Button>
             </div>
           </div>
