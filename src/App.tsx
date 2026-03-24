@@ -10,6 +10,8 @@ import {
 import {
   Activity,
   CalendarClock,
+  ChevronsDown,
+  ChevronsUp,
   CheckCircle2,
   Clock3,
   Flame,
@@ -64,6 +66,11 @@ type TimerState = {
   estimatedMinutes: number
   elapsedSeconds: number
   isPaused: boolean
+}
+
+type NextTaskPromptState = {
+  completedTaskTitle: string
+  nextTaskId: string
 }
 
 const STORAGE_KEYS = {
@@ -181,6 +188,42 @@ function upsertDailyScore(scores: DailyScore[], nextScore: DailyScore): DailySco
   return updated.sort((left, right) => left.date.localeCompare(right.date))
 }
 
+function getPriorityRank(priority: TaskPriority): number {
+  const rank: Record<TaskPriority, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  }
+
+  return rank[priority]
+}
+
+function getNextTaskSuggestion(tasks: Task[], completedTaskId: string): Task | null {
+  const available = tasks
+    .filter((task) => task.id !== completedTaskId && task.status !== 'done' && task.status !== 'archived')
+    .sort((left, right) => {
+      if (left.status !== right.status) {
+        return left.status === 'in_progress' ? -1 : 1
+      }
+
+      if (getPriorityRank(left.priority) !== getPriorityRank(right.priority)) {
+        return getPriorityRank(left.priority) - getPriorityRank(right.priority)
+      }
+
+      if (left.dueAt && right.dueAt) {
+        return new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime()
+      }
+
+      if (left.dueAt) return -1
+      if (right.dueAt) return 1
+
+      return left.estimatedMinutes - right.estimatedMinutes
+    })
+
+  return available[0] ?? null
+}
+
 function formatClock(seconds: number): string {
   const safeSeconds = Math.max(0, seconds)
   const hours = Math.floor(safeSeconds / 3600)
@@ -255,7 +298,9 @@ function App() {
   const [draftPriority, setDraftPriority] = useState<TaskPriority>('medium')
   const [draftMinutes, setDraftMinutes] = useState(25)
   const [activeTimer, setActiveTimer] = useState<TimerState | null>(null)
+  const [isDockCollapsed, setIsDockCollapsed] = useState(false)
   const [rewardBurst, setRewardBurst] = useState<RewardBurst | null>(null)
+  const [nextTaskPrompt, setNextTaskPrompt] = useState<NextTaskPromptState | null>(null)
 
   const copy = uiCopy[locale]
   const deferredSearch = useDeferredValue(search)
@@ -276,6 +321,9 @@ function App() {
   const inboxTasks = tasks.filter((task) => task.status === 'todo')
   const doneTasks = tasks.filter((task) => task.status === 'done')
   const timerTask = activeTimer ? tasks.find((task) => task.id === activeTimer.taskId) ?? null : null
+  const promptedNextTask = nextTaskPrompt
+    ? tasks.find((task) => task.id === nextTaskPrompt.nextTaskId) ?? null
+    : null
   const elapsedMinutes = activeTimer ? Math.max(1, Math.ceil(activeTimer.elapsedSeconds / 60)) : 0
   const elapsedClock = activeTimer ? formatClock(activeTimer.elapsedSeconds) : '00:00'
   const estimateClock = activeTimer ? formatClock(activeTimer.estimatedMinutes * 60) : '00:00'
@@ -417,6 +465,7 @@ function App() {
   function handleCompleteTask(taskId: string) {
     const task = tasks.find((candidate) => candidate.id === taskId)
     if (!task || task.status === 'done') return
+    const suggestedNextTask = getNextTaskSuggestion(tasks, taskId)
 
     const completedAt = new Date().toISOString()
     const actualMinutes =
@@ -474,11 +523,21 @@ function App() {
         taskTitle: getTaskTitle(task, locale),
         highScore: nextDailyScore.totalScore > highScore,
       })
+      setNextTaskPrompt(
+        suggestedNextTask
+          ? {
+              completedTaskTitle: getTaskTitle(task, locale),
+              nextTaskId: suggestedNextTask.id,
+            }
+          : null,
+      )
       setActiveTimer((current) => (current?.taskId === taskId ? null : current))
     })
   }
 
   function handleStartTimer(taskId: string, estimatedMinutes: number) {
+    setIsDockCollapsed(false)
+    setNextTaskPrompt(null)
     setActiveTimer({
       taskId,
       estimatedMinutes,
@@ -493,6 +552,16 @@ function App() {
           : task,
       ),
     )
+  }
+
+  function handleStartSuggestedTask() {
+    if (!promptedNextTask) {
+      setNextTaskPrompt(null)
+      return
+    }
+
+    handleStartTimer(promptedNextTask.id, promptedNextTask.estimatedMinutes)
+    setNextTaskPrompt(null)
   }
 
   function handleAddTask(event: FormEvent<HTMLFormElement>) {
@@ -572,6 +641,7 @@ function App() {
         lifetimeScore: Math.max(0, current.lifetimeScore - removedCompletionScore),
         level: 1 + Math.floor(Math.max(0, current.lifetimeScore - removedCompletionScore) / 700),
       }))
+      setNextTaskPrompt((current) => (current?.nextTaskId === taskId ? null : current))
       setActiveTimer((current) => (current?.taskId === taskId ? null : current))
     })
   }
@@ -584,7 +654,9 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
+      setIsDockCollapsed(false)
       setRewardBurst(null)
+      setNextTaskPrompt(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -603,7 +675,9 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
+      setIsDockCollapsed(false)
       setRewardBurst(null)
+      setNextTaskPrompt(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -1142,8 +1216,121 @@ function App() {
         </aside>
       </div>
 
+      {activeTimer && timerTask ? (
+        <div className="fixed right-4 bottom-4 z-40">
+          {isDockCollapsed ? (
+            <button
+              type="button"
+              onClick={() => setIsDockCollapsed(false)}
+              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-zinc-950/90 px-4 py-3 text-left shadow-2xl backdrop-blur-xl"
+            >
+              <LoaderCircle className="size-4 animate-spin text-amber-300" />
+              <div>
+                <p className="max-w-48 truncate text-sm font-medium text-white">
+                  {getTaskTitle(timerTask, locale)}
+                </p>
+                <p className="text-xs text-zinc-400">{remainingClock}</p>
+              </div>
+              <ChevronsUp className="size-4 text-zinc-400" />
+            </button>
+          ) : (
+            <div className="w-[320px] rounded-3xl border border-white/10 bg-zinc-950/92 p-4 shadow-2xl backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+                    {locale === 'ko' ? '지금 진행 중' : 'Now running'}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <LoaderCircle className="size-4 shrink-0 animate-spin text-amber-300" />
+                    <p className="truncate text-sm font-medium text-white">
+                      {getTaskTitle(timerTask, locale)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDockCollapsed(true)}
+                  className="rounded-xl border border-white/10 p-2 text-zinc-400 transition-colors hover:text-white"
+                >
+                  <ChevronsDown className="size-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MetricSurface label={copy.remaining} value={remainingClock} />
+                <MetricSurface label={copy.elapsed} value={elapsedClock} />
+                <MetricSurface label={copy.estimate} value={estimateClock} />
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setActiveTimer((current) =>
+                      current ? { ...current, isPaused: !current.isPaused } : current,
+                    )
+                  }
+                >
+                  {activeTimer.isPaused ? copy.resume : copy.pause}
+                </Button>
+                <Button size="sm" onClick={() => handleCompleteTask(activeTimer.taskId)}>
+                  {copy.finish}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setActiveTimer(null)}>
+                  {copy.stop}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {nextTaskPrompt && promptedNextTask ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950/95 p-5 shadow-2xl">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-zinc-500">
+              {locale === 'ko' ? '다음 할 일' : 'Next up'}
+            </p>
+            <p className="mt-3 text-lg font-semibold text-white">
+              {locale === 'ko'
+                ? `'${nextTaskPrompt.completedTaskTitle}' 완료. 이 작업을 바로 시작할까요?`
+                : `Finished '${nextTaskPrompt.completedTaskTitle}'. Start this next?`}
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-4">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="border-white/10 text-zinc-300">
+                  {getPriorityLabel(promptedNextTask.priority, locale)}
+                </Badge>
+                <Badge variant="outline" className="border-white/10 text-zinc-300">
+                  {getCategoryLabel(promptedNextTask.category, locale)}
+                </Badge>
+              </div>
+              <p className="mt-3 text-base font-medium text-white">
+                {getTaskTitle(promptedNextTask, locale)}
+              </p>
+              <p className="mt-2 text-sm text-zinc-500">
+                {locale === 'ko'
+                  ? `예상 ${promptedNextTask.estimatedMinutes}분`
+                  : `Estimate ${promptedNextTask.estimatedMinutes}m`}
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setNextTaskPrompt(null)}>
+                {locale === 'ko' ? '나중에' : 'Later'}
+              </Button>
+              <Button onClick={handleStartSuggestedTask}>
+                {locale === 'ko' ? '바로 시작' : 'Start now'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {rewardBurst ? (
-        <div className="fixed right-4 bottom-4 z-50 rounded-2xl border border-amber-300/20 bg-zinc-950/92 px-4 py-3 text-zinc-100 shadow-2xl backdrop-blur-xl">
+        <div className="fixed right-4 bottom-28 z-50 rounded-2xl border border-amber-300/20 bg-zinc-950/92 px-4 py-3 text-zinc-100 shadow-2xl backdrop-blur-xl">
           <div className="font-mono text-lg text-amber-300">+{rewardBurst.totalScore}</div>
           <div className="mt-1 text-sm font-medium">{rewardBurst.taskTitle}</div>
           <div className="mt-1 text-xs text-zinc-400">
