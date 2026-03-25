@@ -1,11 +1,8 @@
-import { CheckCircle2, LoaderCircle, Pause, Play, Square, Trash2 } from 'lucide-react'
+import { CheckCircle2, Pause, Play, RotateCcw, Square, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-
-import { MetricSurface } from './metrics'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 type Locale = 'ko' | 'en'
 
@@ -21,21 +18,17 @@ interface FocusSidebarProps {
   shellCardClass: string
   outlineBadgeClass: string
   timerTitle: string
-  rightPanelHint: string
   runningNow: string
   stateIdle: string
   activeTimerLabel: string
   workingNow: string
-  timerIdleTitle: string
   timerIdleBody: string
   estimateLabel: string
   elapsedLabel: string
-  remainingLabel: string
   pauseLabel: string
   resumeLabel: string
   extendLabel: string
   finishLabel: string
-  stopLabel: string
   activeTaskTitle: string | null
   activeTimerPaused: boolean
   timerTone: string
@@ -57,25 +50,20 @@ export function FocusSidebar({
   shellCardClass,
   outlineBadgeClass,
   timerTitle,
-  rightPanelHint,
   runningNow,
   stateIdle,
   activeTimerLabel,
   workingNow,
-  timerIdleTitle,
   timerIdleBody,
   estimateLabel,
   elapsedLabel,
-  remainingLabel,
   pauseLabel,
   resumeLabel,
   extendLabel,
   finishLabel,
-  stopLabel,
   activeTaskTitle,
   activeTimerPaused,
   timerTone,
-  progress,
   estimateClock,
   elapsedClock,
   remainingClock,
@@ -89,116 +77,111 @@ export function FocusSidebar({
 }: FocusSidebarProps) {
   return (
     <Card className={shellCardClass}>
-      <CardHeader className="border-b border-[var(--line)] pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-lg font-semibold tracking-[-0.04em]">{timerTitle}</CardTitle>
-            <CardDescription className="max-w-[22rem] text-[12px] leading-6">{rightPanelHint}</CardDescription>
-          </div>
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-[12px] font-semibold tracking-[0.22em] text-[var(--text-soft)] uppercase">
+            {locale === 'ko' ? '포커스 엔진' : 'Focus Engine'}
+          </CardTitle>
           <Badge variant="outline" className={outlineBadgeClass}>
             {activeTaskTitle ? runningNow : stateIdle}
           </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-4">
-        {activeTaskTitle ? (
-          <>
-            <div className="rounded-[22px] border border-amber-300/16 bg-[linear-gradient(180deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02))] p-4 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.05)]">
+      <CardContent className="space-y-4 pt-0">
+        <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface)] px-5 py-5">
+          {activeTaskTitle ? (
+            <>
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-[var(--text-soft)]">{activeTimerLabel}</p>
-                  <div className="flex items-center gap-2">
-                    <LoaderCircle className="size-4 animate-spin text-amber-300" />
-                    <p className="text-base font-semibold tracking-[-0.02em] text-foreground">{activeTaskTitle}</p>
-                  </div>
-                  <p className="text-xs text-amber-200">{workingNow}</p>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300">{activeTimerLabel}</p>
+                  <p className="line-clamp-2 text-lg font-semibold tracking-[-0.03em] text-foreground">
+                    {activeTaskTitle}
+                  </p>
+                  <p className="text-sm text-[var(--text-muted)]">{workingNow}</p>
                 </div>
-                <Badge className="bg-[var(--surface-soft)] text-foreground">{timerTone}</Badge>
+                <Badge className="bg-sky-400/12 text-sky-300 shadow-none">{timerTone}</Badge>
               </div>
 
               <div className="mt-5">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{remainingLabel}</p>
-                <div className="mt-2 flex items-end justify-between gap-3">
-                  <p className="font-mono text-[36px] leading-none tracking-[-0.05em] text-foreground xl:text-[40px]">
-                    {remainingClock}
-                  </p>
-                  <div className="text-right text-xs text-[var(--text-muted)]">
-                    <p>
-                      {estimateLabel} {estimateClock}
-                    </p>
-                    <p>
-                      {elapsedLabel} {elapsedClock}
-                    </p>
+                <p className="font-mono text-[52px] leading-none tracking-[-0.06em] text-foreground">{remainingClock}</p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{elapsedLabel}</p>
+                    <p className="mt-2 font-mono text-[20px] leading-none text-foreground">{elapsedClock}</p>
+                  </div>
+                  <div className="rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{estimateLabel}</p>
+                    <p className="mt-2 font-mono text-[20px] leading-none text-foreground">{estimateClock}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center justify-between text-xs text-[var(--text-muted)]">
-                <span>{runningNow}</span>
-                <span>{Math.min(Math.round(progress), 100)}%</span>
+              <div className="mt-5 grid grid-cols-[1fr_60px] gap-3">
+                <Button
+                  type="button"
+                  className="h-14 rounded-[20px] bg-sky-500 text-base font-semibold hover:bg-sky-500/90"
+                  onClick={onTogglePause}
+                >
+                  {activeTimerPaused ? <Play className="size-4" /> : <Pause className="size-4" />}
+                  {activeTimerPaused ? resumeLabel : pauseLabel}
+                </Button>
+                <Button type="button" variant="secondary" className="h-14 rounded-[20px]" onClick={onStop}>
+                  <Square className="size-4" />
+                </Button>
               </div>
-              <Progress value={progress} className="mt-2" />
 
-              <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
-                <MetricSurface label={elapsedLabel} value={elapsedClock} />
-                <MetricSurface label={estimateLabel} value={estimateClock} />
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Button type="button" variant="outline" className="rounded-[18px]" onClick={onExtend}>
+                  {extendLabel}
+                </Button>
+                <Button type="button" variant="outline" className="rounded-[18px]" onClick={onComplete}>
+                  <CheckCircle2 className="size-4" />
+                  {finishLabel}
+                </Button>
               </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-sky-300">{timerTitle}</p>
+              <p className="font-mono text-[48px] leading-none tracking-[-0.06em] text-foreground">00:00</p>
+              <p className="text-sm leading-6 text-[var(--text-muted)]">{timerIdleBody}</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={onTogglePause}>
-                {activeTimerPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-                {activeTimerPaused ? resumeLabel : pauseLabel}
-              </Button>
-              <Button variant="outline" onClick={onExtend}>
-                {extendLabel}
-              </Button>
-              <Button onClick={onComplete}>
-                <CheckCircle2 className="size-3.5" />
-                {finishLabel}
-              </Button>
-              <Button variant="secondary" onClick={onStop}>
-                <Square className="size-3.5" />
-                {stopLabel}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-4">
-            <p className="font-medium text-foreground">{timerIdleTitle}</p>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">{timerIdleBody}</p>
-          </div>
-        )}
+          )}
+        </div>
 
         {pausedTasks.length > 0 ? (
-          <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)]/72 p-4">
+          <div className="rounded-[24px] border border-[var(--line)] bg-[var(--surface)] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-foreground">{locale === 'ko' ? '멈춘 작업' : 'Paused tasks'}</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[var(--text-soft)]">
+                {locale === 'ko' ? '멈춘 작업' : 'Paused tasks'}
+              </p>
               <Badge variant="outline" className={outlineBadgeClass}>
                 {pausedTasks.length}
               </Badge>
             </div>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2.5">
               {pausedTasks.slice(0, 3).map((task) => (
                 <div
                   key={task.taskId}
-                  className="flex items-center justify-between gap-3 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] p-3"
+                  className="rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
-                    <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      {task.elapsedLabel} / {task.modeLabel}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button size="sm" variant="outline" onClick={() => onResumePaused(task.taskId)}>
-                      {locale === 'ko' ? '복귀' : 'Resume'}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onRemovePaused(task.taskId)}>
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        {task.elapsedLabel} · {task.modeLabel}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button size="icon" variant="ghost" className="size-8 rounded-full" onClick={() => onResumePaused(task.taskId)}>
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="size-8 rounded-full" onClick={() => onRemovePaused(task.taskId)}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}

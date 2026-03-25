@@ -9,15 +9,12 @@
 } from 'react'
 import {
   Activity,
-  CalendarClock,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
   CheckCircle2,
-  Clock3,
-  Flame,
   Inbox,
   Layers3,
   Link2,
@@ -25,7 +22,6 @@ import {
   MoonStar,
   RefreshCcw,
   Search,
-  Sparkles,
   SunMedium,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -33,11 +29,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MetricSurface } from '@/components/app/metrics'
 import { FocusSidebar } from '@/components/app/focus-sidebar'
-import { CompletionFeedPanel, FocusByHourPanel, TodayReportPanel } from '@/components/app/insight-panels'
-import { MetricSurface, SidebarMetric, TopMetric } from '@/components/app/metrics'
-import { StartDayPanel } from '@/components/app/start-day-panel'
+import { CompletionFeedPanel, SuggestedNextPanel } from '@/components/app/insight-panels'
 import { TaskRow } from '@/components/app/task-row'
 import { ClockOutSummaryModal, NextTaskModal, SwitchTaskModal } from '@/components/app/task-modals'
 import { TaskComposer } from '@/components/app/task-composer'
@@ -672,11 +666,6 @@ function App() {
   const selectedCompletions = completions.filter(
     (completion) => getDateKey(completion.completedAt, profile.timezone) === selectedDateKey,
   )
-  const selectedFlowEvents = flowEvents.filter(
-    (event) => getDateKey(event.at, profile.timezone) === selectedDateKey,
-  )
-  const selectedSwitchCount = selectedFlowEvents.filter((event) => event.type !== 'resume').length
-  const selectedInterruptCount = selectedFlowEvents.filter((event) => event.type === 'interrupt').length
   const selectedScore =
     dailyScores.find((score) => score.date === selectedDateKey) ??
     {
@@ -691,8 +680,6 @@ function App() {
   const effectiveDraftHorizon = parsedDraft.horizon ?? draftHorizon
   const todayKey = selectedDateKey
   const todayCompletions = selectedCompletions
-  const todaySwitchCount = selectedSwitchCount
-  const todayInterruptCount = selectedInterruptCount
   const todayScore = selectedScore
   const todayReport = selectedReport
 
@@ -711,40 +698,6 @@ function App() {
   const inboxTasks = tasks.filter((task) => task.status === 'todo' && matchesSelectedDate(task))
   const doneTasks = tasks.filter((task) => completedTaskIdsForSelectedDate.has(task.id))
   const selectedScheduledCount = tasks.filter((task) => matchesSelectedDate(task)).length
-  const selectedOpenMinutes = openTasks.reduce((sum, task) => sum + task.estimatedMinutes, 0)
-  const recommendedStartTasks = openTasks
-    .slice()
-    .sort((left, right) => {
-      if (getPriorityRank(left.priority) !== getPriorityRank(right.priority)) {
-        return getPriorityRank(left.priority) - getPriorityRank(right.priority)
-      }
-
-      if (left.dueAt && right.dueAt) {
-        return new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime()
-      }
-
-      if (left.dueAt) return -1
-      if (right.dueAt) return 1
-      return left.estimatedMinutes - right.estimatedMinutes
-    })
-  const prioritizedTaskIds = focusTaskIds.filter((taskId) => openTasks.some((task) => task.id === taskId))
-  const startDayTasks = [
-    ...prioritizedTaskIds
-      .map((taskId) => openTasks.find((task) => task.id === taskId) ?? null)
-      .filter((task): task is Task => Boolean(task)),
-    ...recommendedStartTasks.filter((task) => !prioritizedTaskIds.includes(task.id)),
-  ].slice(0, 3)
-  const startDayTaskItems = startDayTasks.map((task) => ({
-    id: task.id,
-    title: getTaskTitle(task, locale),
-    priorityLabel: getPriorityLabel(task.priority, locale),
-    estimateLabel: `${task.estimatedMinutes}m`,
-    dueLabel: formatDueLabel(task.dueAt, profile.timezone, locale),
-    pinned: focusTaskIds.includes(task.id),
-    estimatedMinutes: task.estimatedMinutes,
-  }))
-  const budgetProgress = plannedWorkMinutes > 0 ? Math.min((selectedOpenMinutes / plannedWorkMinutes) * 100, 100) : 0
-  const budgetDeltaMinutes = plannedWorkMinutes - selectedOpenMinutes
   const selectedFocusSessions = focusSessions
     .map((session) => sliceFocusSessionToDay(session, selectedDate))
     .filter((session): session is FocusSession => Boolean(session))
@@ -753,12 +706,6 @@ function App() {
     (sum, session) => sum + session.durationSeconds,
     0,
   )
-  const selectedHourlyFocus = buildHourlyFocusSessions(selectedFocusSessions, selectedDate, profile.timezone)
-  const selectedActiveHours = selectedHourlyFocus
-    .map((seconds, hour) => ({ hour, seconds }))
-    .filter((entry) => entry.seconds > 0)
-  const firstFocusSession = selectedFocusSessions[0] ?? null
-  const lastFocusSession = selectedFocusSessions.length > 0 ? selectedFocusSessions.at(-1) ?? null : null
   const displayFocusSeconds =
     selectedTrackedFocusSeconds > 0 ? selectedTrackedFocusSeconds : todayScore.focusMinutes * 60
   const displayFocusLabel = formatClock(displayFocusSeconds)
@@ -905,34 +852,6 @@ function App() {
     : locale === 'ko'
       ? '대기'
       : 'Off'
-  const workspaceModeLabel =
-    currentView === 'today'
-      ? activeTimer
-        ? locale === 'ko'
-          ? '실행 중'
-          : 'Running'
-        : activeWorkSession
-          ? locale === 'ko'
-            ? '근무 중'
-            : 'Workday open'
-          : locale === 'ko'
-            ? '준비됨'
-            : 'Ready'
-      : currentView === 'history'
-        ? locale === 'ko'
-          ? '주간 리뷰'
-          : 'Weekly review'
-        : currentView === 'done'
-          ? locale === 'ko'
-            ? '완료 기록'
-            : 'Completed'
-          : currentView === 'inbox'
-            ? locale === 'ko'
-              ? '정리 필요'
-              : 'Triage'
-            : locale === 'ko'
-              ? '연동'
-              : 'Integrations'
   const promptedNextTasks = nextTaskPrompt
     ? nextTaskPrompt.candidateTaskIds
         .map((taskId) => tasks.find((task) => task.id === taskId) ?? null)
@@ -1055,6 +974,30 @@ function App() {
   const promptedPrimaryTask = promptedTaskItems[0] ?? null
   const promptedOtherTasks = promptedTaskItems.slice(1)
 
+  const fallbackSuggestedTask =
+    openTasks
+      .filter((task) => task.id !== activeTimer?.taskId)
+      .sort((left, right) => right.points - left.points)[0] ?? null
+
+  const suggestedNextCard = promptedPrimaryTask
+    ? {
+        id: promptedPrimaryTask.id,
+        title: promptedPrimaryTask.title,
+        detail: promptedPrimaryTask.detail,
+        badge: promptedPrimaryTask.priorityLabel,
+      }
+    : fallbackSuggestedTask
+      ? {
+          id: fallbackSuggestedTask.id,
+          title: getTaskTitle(fallbackSuggestedTask, locale),
+          detail:
+            locale === 'ko'
+              ? `${getCategoryLabel(fallbackSuggestedTask.category, locale)} · 예상 ${fallbackSuggestedTask.estimatedMinutes}분`
+              : `${getCategoryLabel(fallbackSuggestedTask.category, locale)} · ${fallbackSuggestedTask.estimatedMinutes}m estimate`,
+          badge: getPriorityLabel(fallbackSuggestedTask.priority, locale),
+        }
+      : null
+
   const displayedTasks = filteredTasks.filter((task) => {
     if (currentView === 'today') return task.status !== 'done'
     if (currentView === 'inbox') return task.status === 'todo'
@@ -1062,12 +1005,10 @@ function App() {
     return false
   })
 
-  const topMetrics = [
-    { label: copy.todayScore, value: todayScore.totalScore.toString(), accent: true },
-    { label: copy.highScore, value: highScore.toString(), accent: false },
-    { label: copy.focusMinutes, value: displayFocusLabel, accent: false },
-    { label: copy.level, value: `${profile.level}`, accent: false },
-  ]
+  const dailyProgressPercent =
+    todayReport.completedCount + openTasks.length > 0
+      ? Math.round((todayReport.completedCount / (todayReport.completedCount + openTasks.length)) * 100)
+      : 0
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -1660,20 +1601,6 @@ function App() {
     })
   }
 
-  function toggleFocusTask(taskId: string) {
-    setFocusTaskIds((current) => {
-      if (current.includes(taskId)) {
-        return current.filter((id) => id !== taskId)
-      }
-
-      if (current.length >= 3) {
-        return [...current.slice(1), taskId]
-      }
-
-      return [...current, taskId]
-    })
-  }
-
   function resetBoard() {
     startTransition(() => {
       setTasks(EMPTY_TASKS)
@@ -1735,8 +1662,70 @@ function App() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-[1680px] px-3 py-3 md:px-5 md:py-5">
-      <div className="grid min-h-[calc(100vh-1.5rem)] gap-3 xl:grid-cols-[232px_minmax(0,1fr)_416px] 2xl:grid-cols-[232px_minmax(0,1fr)_432px]">
+    <div className="mx-auto min-h-screen max-w-[1760px] px-4 py-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[28px] border border-[var(--line)] bg-[var(--panel)] px-5 py-4 shadow-[var(--panel-shadow)]">
+        <div className="flex min-w-0 items-center gap-3">
+          <p className="text-[20px] font-semibold tracking-[-0.05em] text-foreground">{copy.appTitle}</p>
+          <span className="hidden h-4 w-px bg-[var(--line)] md:block" />
+          <p className="hidden text-[15px] font-medium text-sky-300 md:block">
+            {currentView === 'today'
+              ? 'Dashboard'
+              : currentView === 'inbox'
+                ? copy.navInbox
+                : currentView === 'done'
+                  ? copy.navDone
+                  : currentView === 'history'
+                    ? copy.navHistory
+                    : copy.navIntegrations}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-full border border-sky-400/22 bg-sky-400/8 px-4 py-2 text-sm font-medium text-foreground">
+            <span className="size-2 rounded-full bg-sky-400" />
+            {activeWorkSession
+              ? `${locale === 'ko' ? 'CLOCKED IN' : 'CLOCKED IN'} ${formatClock(activeWorkElapsedSeconds)}`
+              : locale === 'ko'
+                ? '대기'
+                : 'Idle'}
+          </div>
+
+          {currentView === 'today' ? (
+            <>
+              <Button onClick={handleClockIn} disabled={Boolean(activeWorkSession)} size="sm" className="rounded-full">
+                {locale === 'ko' ? '출근' : 'Clock in'}
+              </Button>
+              <Button variant="outline" onClick={handleClockOut} disabled={!activeWorkSession} size="sm" className="rounded-full">
+                {locale === 'ko' ? '퇴근' : 'Clock out'}
+              </Button>
+            </>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] p-1">
+            <Button variant={theme === 'light' ? 'default' : 'ghost'} size="icon" className="size-9 rounded-full" onClick={() => setTheme('light')}>
+              <SunMedium className="size-4" />
+            </Button>
+            <Button variant={theme === 'dark' ? 'default' : 'ghost'} size="icon" className="size-9 rounded-full" onClick={() => setTheme('dark')}>
+              <MoonStar className="size-4" />
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] p-1">
+            <Button variant={locale === 'ko' ? 'default' : 'ghost'} size="sm" className="rounded-full px-3" onClick={() => setLocale('ko')}>
+              한글
+            </Button>
+            <Button variant={locale === 'en' ? 'default' : 'ghost'} size="sm" className="rounded-full px-3" onClick={() => setLocale('en')}>
+              EN
+            </Button>
+          </div>
+
+          <Button size="icon" variant="ghost" className="size-9 rounded-full" onClick={resetBoard}>
+            <RefreshCcw className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid min-h-[calc(100vh-7.25rem)] gap-4 xl:grid-cols-[248px_minmax(0,1fr)_356px]">
         <aside className="flex min-h-0 flex-col gap-3">
           <Card className={shellCardClass}>
             <CardHeader className="border-b border-[var(--line)] pb-4">
@@ -1780,298 +1769,133 @@ function App() {
             </CardContent>
           </Card>
 
-          <Card
-            className={cn(
-              quietCardClass,
-              activeWorkSession && 'border-amber-300/18 bg-amber-300/4 shadow-[0_18px_34px_rgba(245,173,72,0.08)]',
-            )}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">{copy.profileLabel}</CardTitle>
+          <Card className={quietCardClass + ' mt-auto'}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-[12px] font-semibold tracking-[0.18em] text-[var(--text-soft)] uppercase">
+                  {locale === 'ko' ? 'Daily progress' : 'Daily progress'}
+                </CardTitle>
+                <span className="text-sm font-semibold text-sky-300">{dailyProgressPercent}%</span>
+              </div>
             </CardHeader>
-            <CardContent className="grid gap-2 pt-0">
-              <SidebarMetric icon={Sparkles} label={copy.todayScore} value={todayScore.totalScore.toString()} />
-              <SidebarMetric icon={Flame} label={copy.currentCombo} value={`x${todayScore.comboPeak || 1}`} />
-              <SidebarMetric icon={Clock3} label={copy.focusMinutes} value={displayFocusLabel} />
-              <SidebarMetric icon={CalendarClock} label={copy.taskCountLabel} value={openTasks.length.toString()} />
-            </CardContent>
-          </Card>
-
-          <Card className={quietCardClass}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">{copy.language}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2 pt-0">
-              <Button
-                variant={locale === 'ko' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setLocale('ko')}
-              >
-                한글
-              </Button>
-              <Button
-                variant={locale === 'en' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setLocale('en')}
-              >
-                EN
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className={quietCardClass}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">{locale === 'ko' ? '테마' : 'Theme'}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2 pt-0">
-              <Button
-                variant={theme === 'light' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme('light')}
-              >
-                <SunMedium className="size-3.5" />
-                {locale === 'ko' ? '라이트' : 'Light'}
-              </Button>
-              <Button
-                variant={theme === 'dark' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme('dark')}
-              >
-                <MoonStar className="size-3.5" />
-                {locale === 'ko' ? '다크' : 'Dark'}
-              </Button>
+            <CardContent className="space-y-4 pt-0">
+              <div className="h-3 overflow-hidden rounded-full bg-[var(--surface)]">
+                <div className="h-full rounded-full bg-sky-500" style={{ width: `${dailyProgressPercent}%` }} />
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between text-[var(--text-soft)]">
+                  <span>{locale === 'ko' ? '완료' : 'Tasks'}</span>
+                  <span className="font-mono text-foreground">
+                    {todayReport.completedCount}/{todayReport.completedCount + openTasks.length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[var(--text-soft)]">
+                  <span>{copy.todayScore}</span>
+                  <span className="font-mono text-foreground">{todayScore.totalScore}</span>
+                </div>
+                <div className="flex items-center justify-between text-[var(--text-soft)]">
+                  <span>{copy.focusMinutes}</span>
+                  <span className="font-mono text-foreground">{displayFocusLabel}</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </aside>
 
         <main className="flex min-h-0 flex-col gap-3">
           <Card className={shellCardClass}>
-            <CardHeader className="border-b border-[var(--line)] pb-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="space-y-3">
-                  <CardTitle className="text-[28px] leading-none font-semibold tracking-[-0.06em] xl:text-[32px]">
-                    {currentView === 'today'
-                      ? copy.workspaceTitle
-                      : currentView === 'inbox'
-                        ? copy.navInbox
-                        : currentView === 'done'
-                          ? copy.navDone
-                          : currentView === 'history'
-                            ? copy.navHistory
-                            : copy.navIntegrations}
-                  </CardTitle>
-                  {(currentView === 'today' || currentView === 'inbox' || currentView === 'done') ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="size-8 rounded-full"
-                        onClick={() => {
-                          setSelectedDayOffset((current) => current - 1)
-                          setIsDatePickerOpen(false)
-                        }}
-                      >
-                        <ChevronLeft className="size-4" />
-                      </Button>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setIsDatePickerOpen((current) => !current)}
-                          className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-soft)]"
-                        >
-                          <CalendarDays className="size-4 text-[var(--text-soft)]" />
-                          <span className="font-medium text-foreground">{selectedDateLabel}</span>
-                          <span className="text-[var(--text-muted)]">
-                            {getRelativeDayLabel(selectedDayOffset, locale)}
-                          </span>
-                        </button>
+            <CardHeader className="pb-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-10 rounded-full"
+                    onClick={() => {
+                      setSelectedDayOffset((current) => current - 1)
+                      setIsDatePickerOpen(false)
+                    }}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsDatePickerOpen((current) => !current)}
+                      className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-[var(--surface-soft)]"
+                    >
+                      <CalendarDays className="size-4 text-[var(--text-soft)]" />
+                      <span>{selectedDateLabel}</span>
+                      <span className="text-[var(--text-muted)]">{getRelativeDayLabel(selectedDayOffset, locale)}</span>
+                    </button>
 
-                        {isDatePickerOpen ? (
-                          <div className="absolute top-full left-0 z-20 mt-2 w-[280px] rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-2xl backdrop-blur-xl">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-medium text-foreground">
-                                  {locale === 'ko' ? '?좎쭨 ?좏깮' : 'Pick a date'}
-                                </p>
-                                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                                  {locale === 'ko'
-                                    ? `이 날짜의 일정 ${selectedScheduledCount}개`
-                                    : `${selectedScheduledCount} scheduled items`}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setIsDatePickerOpen(false)}
-                              >
-                                {locale === 'ko' ? '?リ린' : 'Close'}
-                              </Button>
-                            </div>
-
-                            <Input
-                              type="date"
-                              value={selectedDateKey}
-                              onChange={(event) => {
-                                setSelectedDayOffset(getDayOffsetFromKey(event.target.value))
-                              }}
-                              className="mt-4 h-11 rounded-2xl border-[var(--line)] bg-[var(--surface)]"
-                            />
-
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelectedDayOffset(-1)}
-                              >
-                                {locale === 'ko' ? '어제' : 'Yesterday'}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelectedDayOffset(0)}
-                              >
-                                {locale === 'ko' ? '오늘' : 'Today'}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSelectedDayOffset(1)}
-                              >
-                                {locale === 'ko' ? '내일' : 'Tomorrow'}
-                              </Button>
-                            </div>
+                    {isDatePickerOpen ? (
+                      <div className="absolute top-full left-0 z-20 mt-2 w-[280px] rounded-[24px] border border-[var(--line)] bg-[var(--panel)] p-4 shadow-2xl backdrop-blur-xl">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{locale === 'ko' ? '날짜 선택' : 'Pick a date'}</p>
+                            <p className="mt-1 text-xs text-[var(--text-muted)]">
+                              {locale === 'ko'
+                                ? `이 날짜의 일정 ${selectedScheduledCount}개`
+                                : `${selectedScheduledCount} scheduled items`}
+                            </p>
                           </div>
-                        ) : null}
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setIsDatePickerOpen(false)}>
+                            {locale === 'ko' ? '닫기' : 'Close'}
+                          </Button>
+                        </div>
+
+                        <Input
+                          type="date"
+                          value={selectedDateKey}
+                          onChange={(event) => setSelectedDayOffset(getDayOffsetFromKey(event.target.value))}
+                          className="mt-4 h-11 rounded-2xl border-[var(--line)] bg-[var(--surface)]"
+                        />
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-full"
-                        onClick={() => {
-                          setSelectedDayOffset(0)
-                          setIsDatePickerOpen(false)
-                        }}
-                      >
-                        {locale === 'ko' ? '오늘' : 'Today'}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="size-8 rounded-full"
-                        onClick={() => {
-                          setSelectedDayOffset((current) => current + 1)
-                          setIsDatePickerOpen(false)
-                        }}
-                      >
-                        <ChevronRight className="size-4" />
-                      </Button>
-                    </div>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className={outlineBadgeClass}>
-                      {workspaceModeLabel}
-                    </Badge>
-                    <Badge variant="outline" className={outlineBadgeClass}>
-                      {currentView === 'today'
-                        ? `${openTasks.length} / ${copy.taskCountLabel}`
-                        : currentView === 'inbox'
-                          ? `${inboxTasks.length} / ${copy.navInbox}`
-                          : currentView === 'done'
-                            ? `${doneTasks.length} / ${copy.navDone}`
-                            : currentView === 'history'
-                              ? '7d'
-                              : copy.navIntegrations}
-                    </Badge>
-                    <Badge variant="outline" className={outlineBadgeClass}>
-                      {displayFocusLabel}
-                    </Badge>
-                    <Badge variant="outline" className={outlineBadgeClass}>
-                      x{todayScore.comboPeak || 1}
-                    </Badge>
+                    ) : null}
                   </div>
-                  {currentView === 'today' ? (
-                    <div className="mt-3 flex flex-col gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
-                      <div className="flex flex-wrap items-center gap-2.5 text-sm">
-                        <Badge
-                          variant="outline"
-                          className={
-                            activeWorkSession
-                              ? 'border-amber-300/22 bg-amber-300/10 text-amber-200 shadow-none'
-                              : outlineBadgeClass
-                          }
-                        >
-                          {workdayStateLabel}
-                        </Badge>
-                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
-                          {locale === 'ko' ? '출근' : 'Clock in'} {activeWorkSession ? activeWorkStartLabel : '--:--'}
-                        </span>
-                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
-                          {locale === 'ko' ? '근무 누적' : 'Elapsed'}{' '}
-                          {activeWorkSession ? formatClock(activeWorkElapsedSeconds) : displayWorkLabel}
-                        </span>
-                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
-                          {locale === 'ko' ? '실집중 비율' : 'Focus ratio'}{' '}
-                          {selectedWorkSeconds > 0 ? `${selectedFocusRatio}%` : '--'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 xl:flex xl:items-center">
-                        <Button onClick={handleClockIn} disabled={Boolean(activeWorkSession)} size="sm">
-                          {locale === 'ko' ? '출근' : 'Clock in'}
-                        </Button>
-                        <Button variant="outline" onClick={handleClockOut} disabled={!activeWorkSession} size="sm">
-                          {locale === 'ko' ? '퇴근' : 'Clock out'}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  <CardDescription className="hidden">
-                    {currentView === 'today'
-                      ? `${openTasks.length} · ${copy.taskCountLabel}`
-                      : currentView === 'inbox'
-                        ? `${inboxTasks.length} · ${copy.navInbox}`
-                        : currentView === 'done'
-                          ? `${doneTasks.length} · ${copy.navDone}`
-                          : currentView === 'history'
-                            ? copy.historyBody
-                            : copy.integrationsBody}
-                  </CardDescription>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {currentView !== 'history' ? (
-                    <Button size="sm" variant="secondary" onClick={loadDemoBoard}>
-                      {copy.demoSyncLabel}
-                    </Button>
-                  ) : null}
-                  <Button size="sm" variant="destructive" onClick={clearAll}>
-                    {copy.clearAll}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={resetBoard}>
-                    <RefreshCcw className="size-3.5" />
-                    {copy.resetBoard}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-10 rounded-full"
+                    onClick={() => {
+                      setSelectedDayOffset((current) => current + 1)
+                      setIsDatePickerOpen(false)
+                    }}
+                  >
+                    <ChevronRight className="size-4" />
                   </Button>
                 </div>
+
+                <div className="relative min-w-[260px] flex-1">
+                  <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--text-muted)]" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={locale === 'ko' ? 'Search tasks, docs, command' : 'Search tasks, docs, command'}
+                    className="h-12 rounded-[18px] border-[var(--line)] bg-[var(--surface)] pl-11"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] p-1">
+                  <Button variant={currentView === 'today' ? 'default' : 'ghost'} size="sm" className="rounded-full px-4" onClick={() => setCurrentView('today')}>
+                    {locale === 'ko' ? 'ALL' : 'ALL'}
+                  </Button>
+                  <Button variant={currentView === 'inbox' ? 'default' : 'ghost'} size="sm" className="rounded-full px-4" onClick={() => setCurrentView('inbox')}>
+                    {locale === 'ko' ? 'PENDING' : 'PENDING'}
+                  </Button>
+                  <Button variant={currentView === 'done' ? 'default' : 'ghost'} size="sm" className="rounded-full px-4" onClick={() => setCurrentView('done')}>
+                    {locale === 'ko' ? 'DONE' : 'DONE'}
+                  </Button>
+                </div>
+
+                <Button size="sm" variant="destructive" className="rounded-full" onClick={clearAll}>
+                  {copy.clearAll}
+                </Button>
               </div>
             </CardHeader>
-
-            <CardContent className="grid gap-2.5 pt-4 sm:grid-cols-2 2xl:grid-cols-4">
-              {topMetrics.map((metric) => (
-                <TopMetric
-                  key={metric.label}
-                  label={metric.label}
-                  value={metric.value}
-                  accent={metric.accent}
-                />
-              ))}
-            </CardContent>
           </Card>
 
           <Card className={shellCardClass}>
@@ -2079,66 +1903,54 @@ function App() {
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                   <div className="space-y-1">
-                    <CardTitle className="text-xl font-semibold tracking-[-0.04em]">
-                      {currentView === 'today'
-                        ? copy.boardTitle
-                        : currentView === 'inbox'
-                          ? copy.navInbox
-                          : currentView === 'done'
-                            ? copy.navDone
-                            : currentView === 'history'
-                              ? (locale === 'ko' ? '주간 리뷰' : 'Weekly review')
-                              : copy.navIntegrations}
+                    <p className="text-[12px] font-semibold tracking-[0.22em] text-[var(--text-soft)] uppercase">
+                      {locale === 'ko' ? 'Priority focused' : 'Priority focused'}
+                    </p>
+                    <CardTitle className="text-[34px] font-semibold tracking-[-0.055em]">
+                      {currentView === 'today' ? 'Active Tasks' : currentView === 'inbox' ? copy.navInbox : currentView === 'done' ? copy.navDone : currentView === 'history' ? 'Weekly Review' : copy.navIntegrations}
                     </CardTitle>
                     {currentView === 'history' || currentView === 'integrations' ? (
                       <CardDescription>
                         {currentView === 'history' ? copy.historyBody : copy.integrationsBody}
                       </CardDescription>
-                    ) : null}
+                    ) : (
+                      <CardDescription>
+                        {currentView === 'today'
+                          ? locale === 'ko'
+                            ? '오늘 가장 중요한 작업부터 밀어주세요.'
+                            : 'Focus on what matters most today.'
+                          : currentView === 'inbox'
+                            ? locale === 'ko'
+                              ? '아직 시작하지 않은 작업입니다.'
+                              : 'Tasks waiting to be started.'
+                            : locale === 'ko'
+                              ? '오늘 닫은 작업입니다.'
+                              : 'Tasks already completed.'}
+                      </CardDescription>
+                    )}
                   </div>
 
                   {currentView === 'today' || currentView === 'inbox' || currentView === 'done' ? (
-                    <div className="flex flex-col gap-2 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] p-2 xl:flex-row">
-                    <div className="relative xl:min-w-[280px] xl:flex-1">
-                      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--text-muted)]" />
-                      <Input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder={copy.searchPlaceholder}
-                        className="h-10 w-full rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)] pl-9"
-                      />
-                    </div>
-
-                    <Select
-                      value={statusFilter}
-                      onValueChange={(value) => setStatusFilter(value as FilterValue)}
-                    >
-                      <SelectTrigger className="h-10 w-full rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)] xl:w-36">
-                        <SelectValue placeholder={copy.allStatuses} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">{copy.allStatuses}</SelectItem>
-                        <SelectItem value="todo">{copy.todo}</SelectItem>
-                        <SelectItem value="in_progress">{copy.inProgress}</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Select
-                      value={priorityFilter}
-                      onValueChange={(value) => setPriorityFilter(value as TaskPriority | 'all')}
-                    >
-                      <SelectTrigger className="h-10 w-full rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)] xl:w-40">
-                        <SelectValue placeholder={copy.allPriorities} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">{copy.allPriorities}</SelectItem>
-                        {priorityOptions.map((priority) => (
-                          <SelectItem key={priority} value={priority}>
-                            {getPriorityLabel(priority, locale)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline" className={outlineBadgeClass}>{workdayStateLabel}</Badge>
+                      <Badge variant="outline" className={outlineBadgeClass}>
+                        {currentView === 'today' ? `${openTasks.length} ${locale === 'ko' ? '개 남음' : 'left'}` : currentView === 'inbox' ? `${inboxTasks.length}` : `${doneTasks.length}`}
+                      </Badge>
+                      <Badge variant="outline" className={outlineBadgeClass}>{displayFocusLabel}</Badge>
+                      <Badge variant="outline" className={outlineBadgeClass}>x{todayScore.comboPeak || 1}</Badge>
+                      {currentView === 'today' ? (
+                        <>
+                          <Badge variant="outline" className={outlineBadgeClass}>
+                            {locale === 'ko' ? `출근 ${activeWorkStartLabel}` : `Clock in ${activeWorkStartLabel}`}
+                          </Badge>
+                          <Badge variant="outline" className={outlineBadgeClass}>
+                            {locale === 'ko' ? `근무 ${displayWorkLabel}` : `Work ${displayWorkLabel}`}
+                          </Badge>
+                          <Badge variant="outline" className={outlineBadgeClass}>
+                            {locale === 'ko' ? `집중 ${selectedFocusRatio}%` : `Focus ${selectedFocusRatio}%`}
+                          </Badge>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -2220,24 +2032,6 @@ function App() {
               ) : (
                 <ScrollArea className="h-[calc(100vh-22rem)] pr-3">
                   <div className="space-y-3">
-                    {currentView === 'today' ? (
-                    <StartDayPanel
-                      locale={locale}
-                      activeWorkSession={Boolean(activeWorkSession)}
-                      activeWorkStartLabel={activeWorkStartLabel}
-                        plannedWorkMinutes={plannedWorkMinutes}
-                        selectedOpenMinutes={selectedOpenMinutes}
-                        budgetProgress={budgetProgress}
-                        budgetDeltaMinutes={budgetDeltaMinutes}
-                      tasks={startDayTaskItems}
-                      pinnedCount={focusTaskIds.length}
-                      outlineBadgeClass={outlineBadgeClass}
-                      onStartTimer={handleStartTimer}
-                      onToggleFocusTask={toggleFocusTask}
-                      onChangeBudget={setPlannedWorkMinutes}
-                      />
-                    ) : null}
-
                     {displayedTasks.map((task) => (
                       <TaskRow
                         key={task.id}
@@ -2295,25 +2089,21 @@ function App() {
             locale={locale}
             shellCardClass={cn(
               shellCardClass,
-              activeTimer && 'border-amber-300/18 shadow-[0_18px_40px_rgba(245,173,72,0.1)]',
+              activeTimer && 'border-sky-400/22 shadow-[0_18px_40px_rgba(56,189,248,0.08)]',
             )}
             outlineBadgeClass={outlineBadgeClass}
             timerTitle={copy.timerTitle}
-            rightPanelHint={copy.rightPanelHint}
             runningNow={copy.runningNow}
             stateIdle={copy.stateIdle}
             activeTimerLabel={copy.activeTimerLabel}
             workingNow={copy.workingNow}
-            timerIdleTitle={copy.timerIdleTitle}
             timerIdleBody={copy.timerIdleBody}
             estimateLabel={copy.estimate}
             elapsedLabel={copy.elapsed}
-            remainingLabel={copy.remaining}
             pauseLabel={copy.pause}
             resumeLabel={copy.resume}
             extendLabel={copy.extend}
             finishLabel={copy.finish}
-            stopLabel={copy.stop}
             activeTaskTitle={timerTask ? getTaskTitle(timerTask, locale) : null}
             activeTimerPaused={activeTimer?.isPaused ?? false}
             timerTone={timerTone}
@@ -2334,48 +2124,24 @@ function App() {
             onRemovePaused={handleRemovePausedTask}
           />
 
-          <TodayReportPanel
-            shellCardClass={quietCardClass}
-            title={copy.reportTitle}
-            sentence={copy.reportSentence(todayReport.completedCount, todayReport.totalScore)}
-            focusMinutesLabel={copy.focusMinutes}
-            onTimeLabel={copy.onTime}
-            overtimeLabel={copy.overtime}
-            switchLabel={locale === 'ko' ? '전환' : 'Switches'}
-            interruptLabel={locale === 'ko' ? '끼어들기' : 'Interrupts'}
-            focusValue={displayFocusLabel}
-            onTimeValue={todayReport.onTimeCount.toString()}
-            overtimeValue={todayReport.overtimeCount.toString()}
-            switchValue={todaySwitchCount.toString()}
-            interruptValue={todayInterruptCount.toString()}
-            reportItems={reportItems}
-          />
-
-          <FocusByHourPanel
-            locale={locale}
-            shellCardClass={quietCardClass}
-            title={locale === 'ko' ? '시간대 집중' : 'Focus by hour'}
-            description={
-              locale === 'ko'
-                ? '타이머로 실제로 눌러서 기록한 실집중 시간만 집계됩니다.'
-                : 'Only time tracked by the focus timer is included.'
-            }
-            firstFocusLabel={locale === 'ko' ? '첫 집중' : 'First focus'}
-            firstFocusValue={firstFocusSession ? formatShortTime(firstFocusSession.startedAt, locale, profile.timezone) : '--:--'}
-            lastFocusLabel={locale === 'ko' ? '마지막 집중' : 'Last focus'}
-            lastFocusValue={lastFocusSession ? formatShortTime(lastFocusSession.endedAt, locale, profile.timezone) : '--:--'}
-            trackedLabel={locale === 'ko' ? '실집중' : 'Tracked'}
-            trackedValue={displayFocusLabel}
-            activeHours={selectedActiveHours}
-            emptyText={locale === 'ko' ? '아직 이 날짜에 기록된 집중 세션이 없습니다.' : 'No tracked focus sessions for this date yet.'}
-          />
-
           <CompletionFeedPanel
             shellCardClass={quietCardClass}
-            title={copy.feedTitle}
+            title={locale === 'ko' ? 'Recent completions' : 'Recent completions'}
             items={completionFeedItems}
             emptyText={copy.noCompletionYet}
             outlineBadgeClass={outlineBadgeClass}
+          />
+
+          <SuggestedNextPanel
+            shellCardClass={quietCardClass}
+            title={locale === 'ko' ? 'Suggested next' : 'Suggested next'}
+            item={suggestedNextCard}
+            emptyText={locale === 'ko' ? '추천할 다음 작업이 없습니다.' : 'No suggested next task yet.'}
+            onPick={(taskId) => {
+              const task = tasks.find((candidate) => candidate.id === taskId)
+              if (!task) return
+              handleStartTimer(task.id, task.estimatedMinutes)
+            }}
           />
         </aside>
       </div>

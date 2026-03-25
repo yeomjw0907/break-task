@@ -59,8 +59,8 @@ export function TodayReportPanel({
       <CardHeader className="border-b border-[var(--line)] pb-4">
         <CardTitle className="text-lg font-semibold tracking-[-0.04em]">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 pt-4">
-        <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)] p-4 text-sm leading-relaxed text-[var(--text-soft)]">
+      <CardContent className="space-y-5 pt-5">
+        <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)] p-5 text-sm leading-relaxed text-[var(--text-soft)]">
           {sentence}
         </div>
 
@@ -121,7 +121,7 @@ export function FocusByHourPanel({
         <CardTitle className="text-lg font-semibold tracking-[-0.04em]">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="space-y-5 pt-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <MetricSurface label={firstFocusLabel} value={firstFocusValue} />
           <MetricSurface label={lastFocusLabel} value={lastFocusValue} />
@@ -150,7 +150,7 @@ export function FocusByHourPanel({
             })}
           </div>
         ) : (
-          <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-4 text-sm text-[var(--text-muted)]">
+          <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5 text-sm leading-6 text-[var(--text-muted)]">
             {emptyText}
           </div>
         )}
@@ -176,15 +176,17 @@ export function CompletionFeedPanel({
 }: CompletionFeedPanelProps) {
   return (
     <Card className={shellCardClass}>
-      <CardHeader className="border-b border-[var(--line)] pb-4">
-        <CardTitle className="text-lg font-semibold tracking-[-0.04em]">{title}</CardTitle>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-[12px] font-semibold tracking-[0.18em] text-[var(--text-soft)] uppercase">
+          {title}
+        </CardTitle>
       </CardHeader>
-      <CardContent className="min-h-0 pt-4">
-        <ScrollArea className="h-[320px] pr-3">
-          <div className="space-y-3">
+      <CardContent className="min-h-0 pt-0">
+        <ScrollArea className="h-[260px] pr-3">
+          <div className="space-y-2.5">
             {items.length > 0 ? (
               items.map((item) => (
-                <div key={item.id} className="rounded-[18px] border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div key={item.id} className="rounded-[18px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
@@ -197,12 +199,63 @@ export function CompletionFeedPanel({
                 </div>
               ))
             ) : (
-              <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-4 text-sm text-[var(--text-muted)]">
+              <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5 text-sm leading-6 text-[var(--text-muted)]">
                 {emptyText}
               </div>
             )}
           </div>
         </ScrollArea>
+      </CardContent>
+    </Card>
+  )
+}
+
+interface SuggestedNextItem {
+  id: string
+  title: string
+  detail: string
+  badge: string
+}
+
+export function SuggestedNextPanel({
+  shellCardClass,
+  title,
+  item,
+  emptyText,
+  onPick,
+}: {
+  shellCardClass: string
+  title: string
+  item: SuggestedNextItem | null
+  emptyText: string
+  onPick: (taskId: string) => void
+}) {
+  return (
+    <Card className={shellCardClass}>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-[12px] font-semibold tracking-[0.18em] text-[var(--text-soft)] uppercase">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {item ? (
+          <button
+            type="button"
+            onClick={() => onPick(item.id)}
+            className="w-full rounded-[22px] border border-[var(--line)] bg-[var(--surface)] px-4 py-4 text-left transition-colors hover:bg-[var(--surface-soft)]"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <Badge className="bg-violet-400/12 text-violet-300 shadow-none">{item.badge}</Badge>
+              <span className="text-lg leading-none text-[var(--text-soft)]">↗</span>
+            </div>
+            <p className="mt-3 text-base font-semibold tracking-[-0.02em] text-foreground">{item.title}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{item.detail}</p>
+          </button>
+        ) : (
+          <div className="rounded-[22px] border border-dashed border-[var(--line)] bg-[var(--surface)] p-5 text-sm leading-6 text-[var(--text-muted)]">
+            {emptyText}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
