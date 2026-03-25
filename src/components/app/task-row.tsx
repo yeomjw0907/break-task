@@ -41,7 +41,7 @@ export function TaskRow({
   return (
     <div
       className={cn(
-        'group grid gap-3 rounded-[22px] border px-4 py-4 transition-colors xl:grid-cols-[minmax(0,1fr)_146px_250px]',
+        'group grid gap-3 rounded-[22px] border px-4 py-4 transition-colors xl:grid-cols-[minmax(0,1fr)_132px_262px]',
         isActive
           ? 'border-amber-300/22 bg-amber-300/6'
           : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]',
@@ -96,7 +96,7 @@ export function TaskRow({
         <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
           {locale === 'ko' ? '예상 보상' : 'Reward'}
         </p>
-        <p className="font-mono text-[20px] leading-none text-foreground">+{task.points}</p>
+        <p className="font-mono text-[18px] leading-none text-foreground xl:text-[20px]">+{task.points}</p>
         <p className="text-xs leading-5 text-[var(--text-muted)]">
           {getPriorityLabel(task.priority, locale)} · {task.estimatedMinutes}m
         </p>
@@ -105,6 +105,10 @@ export function TaskRow({
       <div className="grid gap-2.5 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] p-3">
         {task.status !== 'done' ? (
           <>
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+              <span>{locale === 'ko' ? '실행' : 'Run'}</span>
+              <span>{locale === 'ko' ? '기본 시간' : 'Default'}</span>
+            </div>
             <Button
               variant={isActive ? 'secondary' : 'default'}
               className="h-11 justify-between rounded-[16px] px-4 text-sm font-semibold"
@@ -114,7 +118,11 @@ export function TaskRow({
               <span className="font-mono text-sm">{task.estimatedMinutes}m</span>
             </Button>
 
-            <div className="grid grid-cols-[76px_1fr] gap-2">
+            <div className="space-y-1.5">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                {locale === 'ko' ? '직접 시간' : 'Custom time'}
+              </p>
+              <div className="grid grid-cols-[76px_1fr] gap-2">
               <Input
                 type="number"
                 min={5}
@@ -131,6 +139,7 @@ export function TaskRow({
               >
                 {locale === 'ko' ? `${customMinutes}분 시작` : `${customMinutes}m start`}
               </Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-[1fr_auto] gap-2 pt-1">

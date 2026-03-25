@@ -197,7 +197,7 @@ const notionPreviewTasks: Task[] = [
 const shellCardClass =
   'rounded-[26px] border-[var(--line)] bg-[var(--panel)] py-0 shadow-[var(--panel-shadow)] backdrop-blur-xl'
 const quietCardClass =
-  'rounded-[22px] border-[var(--line)] bg-[var(--panel-soft)] py-0 shadow-[0_10px_26px_rgba(7,10,18,0.06)] backdrop-blur-xl'
+  'rounded-[22px] border-[var(--line)] bg-[var(--panel-soft)] py-0 shadow-[0_8px_22px_rgba(7,10,18,0.045)] backdrop-blur-xl'
 const outlineBadgeClass = 'border-[var(--line)] bg-transparent text-[var(--text-soft)] shadow-none'
 
 function getInitialTheme(): ThemeMode {
@@ -827,10 +827,12 @@ function App() {
       .sort((left, right) => right.focusSeconds - left.focusSeconds)[0] ?? null
   const bestCompletionDay =
     weeklyReviewDays
+      .filter((day) => day.completedCount > 0)
       .slice()
       .sort((left, right) => right.completedCount - left.completedCount || right.score - left.score)[0] ?? null
   const mostInterruptedDay =
     weeklyReviewDays
+      .filter((day) => day.interruptCount > 0 || day.switchCount > 0)
       .slice()
       .sort((left, right) => right.interruptCount - left.interruptCount || right.switchCount - left.switchCount)[0] ?? null
   const weeklyReviewItems = weeklyReviewDays.map((day) => ({
@@ -847,11 +849,15 @@ function App() {
       bestFocusDay?.focusSeconds ? (day.focusSeconds / Math.max(bestFocusDay.focusSeconds, 1)) * 100 : 10,
     ),
   }))
-  const weeklyBestFocusTitle = bestFocusDay ? bestFocusDay.label : '--'
+  const weeklyBestFocusTitle = bestFocusDay && bestFocusDay.focusSeconds > 0 ? bestFocusDay.label : '--'
   const weeklyBestFocusBody = bestFocusDay
-    ? locale === 'ko'
-      ? `${formatClock(bestFocusDay.focusSeconds)} 집중, ${bestFocusDay.focusRatio}% 비율, ${bestFocusDay.completedCount}개 완료`
-      : `${formatClock(bestFocusDay.focusSeconds)} tracked, ${bestFocusDay.focusRatio}% ratio, ${bestFocusDay.completedCount} completed`
+    ? bestFocusDay.focusSeconds > 0
+      ? locale === 'ko'
+        ? `${formatClock(bestFocusDay.focusSeconds)} 집중, ${bestFocusDay.focusRatio}% 비율, ${bestFocusDay.completedCount}개 완료`
+        : `${formatClock(bestFocusDay.focusSeconds)} tracked, ${bestFocusDay.focusRatio}% ratio, ${bestFocusDay.completedCount} completed`
+      : locale === 'ko'
+        ? '아직 집중 데이터가 충분하지 않습니다.'
+        : 'Not enough focus data yet.'
     : locale === 'ko'
       ? '아직 주간 데이터가 충분하지 않습니다.'
       : 'Not enough weekly data yet.'
@@ -892,6 +898,34 @@ function App() {
   const activeWorkStartLabel = activeWorkSession
     ? formatShortTime(activeWorkSession.clockInAt, locale, profile.timezone)
     : '--:--'
+  const workspaceModeLabel =
+    currentView === 'today'
+      ? activeTimer
+        ? locale === 'ko'
+          ? '실행 중'
+          : 'Running'
+        : activeWorkSession
+          ? locale === 'ko'
+            ? '근무 중'
+            : 'Workday open'
+          : locale === 'ko'
+            ? '준비됨'
+            : 'Ready'
+      : currentView === 'history'
+        ? locale === 'ko'
+          ? '주간 리뷰'
+          : 'Weekly review'
+        : currentView === 'done'
+          ? locale === 'ko'
+            ? '완료 기록'
+            : 'Completed'
+          : currentView === 'inbox'
+            ? locale === 'ko'
+              ? '정리 필요'
+              : 'Triage'
+            : locale === 'ko'
+              ? '연동'
+              : 'Integrations'
   const promptedNextTasks = nextTaskPrompt
     ? nextTaskPrompt.candidateTaskIds
         .map((taskId) => tasks.find((task) => task.id === taskId) ?? null)
@@ -1993,6 +2027,9 @@ function App() {
                   ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className={outlineBadgeClass}>
+                      {workspaceModeLabel}
+                    </Badge>
+                    <Badge variant="outline" className={outlineBadgeClass}>
                       {currentView === 'today'
                         ? `${openTasks.length} / ${copy.taskCountLabel}`
                         : currentView === 'inbox'
@@ -2000,7 +2037,7 @@ function App() {
                           : currentView === 'done'
                             ? `${doneTasks.length} / ${copy.navDone}`
                             : currentView === 'history'
-                              ? copy.historyTitle
+                              ? '7d'
                               : copy.navIntegrations}
                     </Badge>
                     <Badge variant="outline" className={outlineBadgeClass}>
@@ -2068,7 +2105,7 @@ function App() {
                           : currentView === 'done'
                             ? copy.navDone
                             : currentView === 'history'
-                              ? copy.historyTitle
+                              ? (locale === 'ko' ? '주간 리뷰' : 'Weekly review')
                               : copy.navIntegrations}
                     </CardTitle>
                     {currentView === 'history' || currentView === 'integrations' ? (
@@ -2149,28 +2186,35 @@ function App() {
                       reflections={weeklyReflectionItems}
                     />
 
-                    {dailyScores
-                      .slice()
-                      .reverse()
-                      .map((score) => (
-                        <div
-                          key={score.date}
-                          className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] px-4 py-4"
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-medium text-foreground">{score.date}</p>
-                              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                                {score.completedCount} tasks · combo x{score.comboPeak || 1}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-mono text-xl text-foreground">{score.totalScore}</p>
-                              <p className="mt-1 text-xs text-[var(--text-muted)]">{score.focusMinutes}m</p>
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {dailyScores
+                        .slice()
+                        .reverse()
+                        .map((score) => (
+                          <div
+                            key={score.date}
+                            className="rounded-[24px] border border-[var(--line)] bg-[var(--surface)] px-4 py-4"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">{score.date}</p>
+                                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                                  {score.completedCount} tasks · combo x{score.comboPeak || 1}
+                                </p>
+                                <p className="mt-3 text-xs text-[var(--text-muted)]">
+                                  {locale === 'ko' ? '집중' : 'Focus'} {score.focusMinutes}m
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-mono text-xl text-foreground">{score.totalScore}</p>
+                                <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                                  {locale === 'ko' ? '점수' : 'Score'}
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                    </div>
                   </div>
                 </ScrollArea>
               ) : currentView === 'integrations' ? (
@@ -2307,7 +2351,7 @@ function App() {
           />
 
           <TodayReportPanel
-            shellCardClass={shellCardClass}
+            shellCardClass={quietCardClass}
             title={copy.reportTitle}
             sentence={copy.reportSentence(todayReport.completedCount, todayReport.totalScore)}
             focusMinutesLabel={copy.focusMinutes}
@@ -2325,7 +2369,7 @@ function App() {
 
           <FocusByHourPanel
             locale={locale}
-            shellCardClass={shellCardClass}
+            shellCardClass={quietCardClass}
             title={locale === 'ko' ? '시간대 집중' : 'Focus by hour'}
             description={
               locale === 'ko'
@@ -2343,7 +2387,7 @@ function App() {
           />
 
           <CompletionFeedPanel
-            shellCardClass={shellCardClass}
+            shellCardClass={quietCardClass}
             title={copy.feedTitle}
             items={completionFeedItems}
             emptyText={copy.noCompletionYet}

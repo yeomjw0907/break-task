@@ -104,7 +104,7 @@ export function FocusSidebar({
       <CardContent className="space-y-4 pt-4">
         {activeTaskTitle ? (
           <>
-            <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)] p-4">
+            <div className="rounded-[22px] border border-amber-300/16 bg-[linear-gradient(180deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02))] p-4 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.05)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-[var(--text-soft)]">{activeTimerLabel}</p>
@@ -123,10 +123,16 @@ export function FocusSidebar({
               </div>
               <Progress value={progress} className="mt-2" />
 
-              <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-                <MetricSurface label={estimateLabel} value={estimateClock} />
+              <div className="mt-4 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-4">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{remainingLabel}</p>
+                <p className="mt-2 font-mono text-[28px] leading-none tracking-[-0.05em] text-foreground">
+                  {remainingClock}
+                </p>
+              </div>
+
+              <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
                 <MetricSurface label={elapsedLabel} value={elapsedClock} />
-                <MetricSurface label={remainingLabel} value={remainingClock} />
+                <MetricSurface label={estimateLabel} value={estimateClock} />
               </div>
             </div>
 
@@ -156,7 +162,7 @@ export function FocusSidebar({
         )}
 
         {pausedTasks.length > 0 ? (
-          <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)] p-4">
+          <div className="rounded-[22px] border border-[var(--line)] bg-[var(--surface)]/72 p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-foreground">{locale === 'ko' ? '멈춘 작업' : 'Paused tasks'}</p>
               <Badge variant="outline" className={outlineBadgeClass}>

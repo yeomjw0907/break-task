@@ -46,20 +46,44 @@ export function StartDayPanel({
 }) {
   const isOverBudget = budgetDeltaMinutes < 0
   const recommendedTask = tasks[0] ?? null
+  const stateLabel = activeWorkSession
+    ? locale === 'ko'
+      ? `${activeWorkStartLabel}부터 근무 중`
+      : `Clocked in at ${activeWorkStartLabel}`
+    : locale === 'ko'
+      ? '출근 전 준비 상태'
+      : 'Before clock-in'
+  const stateBody = activeWorkSession
+    ? locale === 'ko'
+      ? '지금은 Start Day보다 바로 실행과 복귀가 더 중요합니다. 고정 작업과 추천 작업만 빠르게 확인하세요.'
+      : 'The day is already open. Focus on running or resuming the right task.'
+    : locale === 'ko'
+      ? '핵심 작업과 시간 예산만 먼저 고르면, 오늘의 첫 90분이 훨씬 덜 흔들립니다.'
+      : 'Pick the anchors and the budget before the day starts to fragment.'
 
   return (
     <section className="grid gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 lg:grid-cols-[0.92fr_1.08fr]">
       <div className="space-y-4">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Start Day</p>
-          <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.04em] text-foreground xl:text-[22px]">
-            {locale === 'ko' ? '오늘 시작 루틴' : 'Start the day with intent'}
-          </h3>
-          <p className="mt-2 max-w-[32rem] text-sm leading-6 text-[var(--text-soft)]">
-            {locale === 'ko'
-              ? '중요 작업 3개와 근무 예산을 먼저 잡아두면, 하루가 흩어져도 다시 돌아오기 쉽습니다.'
-              : 'Set the top work and the time budget before the day fragments.'}
-          </p>
+        <div className="rounded-[22px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Start Day</p>
+              <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.04em] text-foreground xl:text-[22px]">
+                {locale === 'ko' ? '오늘 시작 루틴' : 'Start the day with intent'}
+              </h3>
+            </div>
+            <Badge
+              variant="outline"
+              className={
+                activeWorkSession
+                  ? 'border-amber-300/24 bg-amber-300/10 text-amber-200'
+                  : outlineBadgeClass
+              }
+            >
+              {stateLabel}
+            </Badge>
+          </div>
+          <p className="mt-3 max-w-[34rem] text-sm leading-6 text-[var(--text-soft)]">{stateBody}</p>
         </div>
 
         <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
@@ -106,7 +130,7 @@ export function StartDayPanel({
               <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
                 {locale === 'ko' ? '오늘 체크리스트' : 'Ritual checklist'}
               </p>
-              <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2">
                 <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
                   <span>{locale === 'ko' ? '출근 상태' : 'Clock state'}</span>
                   <Badge variant="outline" className={outlineBadgeClass}>
@@ -155,7 +179,7 @@ export function StartDayPanel({
               {locale === 'ko' ? '오늘의 핵심 3개' : 'Top 3 today'}
             </p>
             <p className="mt-1 text-sm text-[var(--text-soft)]">
-              {locale === 'ko' ? '오늘을 붙잡아둘 작업만 남기고 바로 시작합니다.' : 'Keep only the tasks that should anchor the day.'}
+              {locale === 'ko' ? '가장 먼저 밀어야 할 작업부터 세워둡니다.' : 'Keep only the tasks that should anchor the day.'}
             </p>
           </div>
           <Badge variant="outline" className={outlineBadgeClass}>
