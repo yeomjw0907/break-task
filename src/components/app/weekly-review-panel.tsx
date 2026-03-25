@@ -57,7 +57,7 @@ export function WeeklyReviewPanel({
         <TopMetric label={locale === 'ko' ? '주간 완료' : 'Completed'} value={weeklyCompletedTotal} />
       </section>
 
-      <section className="grid gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="grid gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 xl:grid-cols-[1.08fr_0.92fr]">
         <div>
           <div className="flex items-center justify-between">
             <div>
@@ -77,28 +77,27 @@ export function WeeklyReviewPanel({
             {days.map((day) => (
               <div
                 key={day.key}
-                className="grid grid-cols-[90px_minmax(0,1fr)_64px] items-center gap-3 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-3"
+                className="grid grid-cols-[88px_minmax(0,1fr)_70px] items-center gap-3 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-3 py-3"
               >
                 <div>
                   <p className="text-sm font-medium text-foreground">{day.label}</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">{day.completedLabel}</p>
                 </div>
+
                 <div>
                   <div className="h-2 rounded-full bg-[var(--surface-soft)]">
-                    <div
-                      className="h-full rounded-full bg-amber-300/85"
-                      style={{ width: `${day.widthPercent}%` }}
-                    />
+                    <div className="h-full rounded-full bg-amber-300/85" style={{ width: `${day.widthPercent}%` }} />
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
                     <span>{day.focusLabel}</span>
                     <span>{day.ratioLabel}</span>
                   </div>
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                  <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
                     <span>{day.switchLabel}</span>
-                    <span className="truncate pl-3">{day.reflection || (locale === 'ko' ? '메모 없음' : 'No note')}</span>
+                    <span className="truncate pl-2">{day.reflection || (locale === 'ko' ? '메모 없음' : 'No note')}</span>
                   </div>
                 </div>
+
                 <p className="text-right font-mono text-sm text-foreground">{day.scoreLabel}</p>
               </div>
             ))}
@@ -138,9 +137,14 @@ export function WeeklyReviewPanel({
           </div>
 
           <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-              {locale === 'ko' ? '최근 메모' : 'Recent reflections'}
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                {locale === 'ko' ? '최근 메모' : 'Recent reflections'}
+              </p>
+              <Badge variant="outline" className={outlineBadgeClass}>
+                {reflections.length}
+              </Badge>
+            </div>
             <div className="mt-3 space-y-2">
               {reflections.length > 0 ? (
                 reflections.map((reflection) => (
@@ -150,9 +154,11 @@ export function WeeklyReviewPanel({
                   </div>
                 ))
               ) : (
-                <p className="text-sm leading-6 text-[var(--text-soft)]">
-                  {locale === 'ko' ? '아직 저장된 일일 메모가 없습니다.' : 'No saved daily reflections yet.'}
-                </p>
+                <div className="rounded-[16px] border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-4">
+                  <p className="text-sm leading-6 text-[var(--text-soft)]">
+                    {locale === 'ko' ? '아직 저장된 일일 메모가 없습니다.' : 'No saved daily reflections yet.'}
+                  </p>
+                </div>
               )}
             </div>
           </div>

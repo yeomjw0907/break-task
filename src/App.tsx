@@ -898,6 +898,13 @@ function App() {
   const activeWorkStartLabel = activeWorkSession
     ? formatShortTime(activeWorkSession.clockInAt, locale, profile.timezone)
     : '--:--'
+  const workdayStateLabel = activeWorkSession
+    ? locale === 'ko'
+      ? '근무 진행 중'
+      : 'Clocked in'
+    : locale === 'ko'
+      ? '대기'
+      : 'Off'
   const workspaceModeLabel =
     currentView === 'today'
       ? activeTimer
@@ -1773,7 +1780,12 @@ function App() {
             </CardContent>
           </Card>
 
-          <Card className={quietCardClass}>
+          <Card
+            className={cn(
+              quietCardClass,
+              activeWorkSession && 'border-amber-300/18 bg-amber-300/4 shadow-[0_18px_34px_rgba(245,173,72,0.08)]',
+            )}
+          >
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">{copy.profileLabel}</CardTitle>
             </CardHeader>
@@ -1791,8 +1803,15 @@ function App() {
                 <CardTitle className="text-sm font-medium">
                   {locale === 'ko' ? '근무 시간' : 'Workday'}
                 </CardTitle>
-                <Badge variant="outline" className={outlineBadgeClass}>
-                  {activeWorkSession ? (locale === 'ko' ? '근무 중' : 'Clocked in') : locale === 'ko' ? '오프' : 'Off'}
+                <Badge
+                  variant="outline"
+                  className={
+                    activeWorkSession
+                      ? 'border-amber-300/22 bg-amber-300/10 text-amber-200 shadow-none'
+                      : outlineBadgeClass
+                  }
+                >
+                  {workdayStateLabel}
                 </Badge>
               </div>
             </CardHeader>
@@ -2312,7 +2331,10 @@ function App() {
         <aside className="flex min-h-0 flex-col gap-3">
           <FocusSidebar
             locale={locale}
-            shellCardClass={shellCardClass}
+            shellCardClass={cn(
+              shellCardClass,
+              activeTimer && 'border-amber-300/18 shadow-[0_18px_40px_rgba(245,173,72,0.1)]',
+            )}
             outlineBadgeClass={outlineBadgeClass}
             timerTitle={copy.timerTitle}
             rightPanelHint={copy.rightPanelHint}

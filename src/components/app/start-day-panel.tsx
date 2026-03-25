@@ -46,6 +46,7 @@ export function StartDayPanel({
 }) {
   const isOverBudget = budgetDeltaMinutes < 0
   const recommendedTask = tasks[0] ?? null
+
   const stateLabel = activeWorkSession
     ? locale === 'ko'
       ? `${activeWorkStartLabel}부터 근무 중`
@@ -53,18 +54,19 @@ export function StartDayPanel({
     : locale === 'ko'
       ? '출근 전 준비 상태'
       : 'Before clock-in'
+
   const stateBody = activeWorkSession
     ? locale === 'ko'
-      ? '지금은 Start Day보다 바로 실행과 복귀가 더 중요합니다. 고정 작업과 추천 작업만 빠르게 확인하세요.'
-      : 'The day is already open. Focus on running or resuming the right task.'
+      ? '이제는 계획보다 실행과 복귀가 더 중요합니다. 고정 작업과 첫 작업만 빠르게 보고 바로 밀어가세요.'
+      : 'The day is already open. Focus on the next move and resume what matters.'
     : locale === 'ko'
-      ? '핵심 작업과 시간 예산만 먼저 고르면, 오늘의 첫 90분이 훨씬 덜 흔들립니다.'
-      : 'Pick the anchors and the budget before the day starts to fragment.'
+      ? '핵심 작업과 근무 예산만 먼저 잡아두면, 오늘의 첫 90분이 훨씬 덜 흔들립니다.'
+      : 'Set the anchors and the work budget first so the first 90 minutes stay stable.'
 
   return (
-    <section className="grid gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 lg:grid-cols-[0.92fr_1.08fr]">
+    <section className="grid gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 lg:grid-cols-[0.94fr_1.06fr]">
       <div className="space-y-4">
-        <div className="rounded-[22px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+        <div className="rounded-[22px] border border-amber-300/14 bg-[linear-gradient(180deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02))] p-4 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.04)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">Start Day</p>
@@ -76,7 +78,7 @@ export function StartDayPanel({
               variant="outline"
               className={
                 activeWorkSession
-                  ? 'border-amber-300/24 bg-amber-300/10 text-amber-200'
+                  ? 'border-amber-300/22 bg-amber-300/10 text-amber-200 shadow-none'
                   : outlineBadgeClass
               }
             >
@@ -86,7 +88,7 @@ export function StartDayPanel({
           <p className="mt-3 max-w-[34rem] text-sm leading-6 text-[var(--text-soft)]">{stateBody}</p>
         </div>
 
-        <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-3 xl:grid-cols-[1.08fr_0.92fr]">
           <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -126,31 +128,29 @@ export function StartDayPanel({
           </div>
 
           <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                {locale === 'ko' ? '오늘 체크리스트' : 'Ritual checklist'}
-              </p>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '오늘 체크리스트' : 'Ritual checklist'}
+            </p>
             <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
-                  <span>{locale === 'ko' ? '출근 상태' : 'Clock state'}</span>
-                  <Badge variant="outline" className={outlineBadgeClass}>
-                    {activeWorkSession
-                      ? locale === 'ko'
-                        ? `${activeWorkStartLabel} 시작`
-                        : `Started ${activeWorkStartLabel}`
-                      : locale === 'ko'
-                        ? '대기'
-                        : 'Ready'}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
-                  <span>{locale === 'ko' ? '고정 작업' : 'Pinned anchors'}</span>
-                  <span className="font-mono text-foreground">{pinnedCount}/3</span>
-                </div>
-                <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
-                  <span>{locale === 'ko' ? '첫 작업 후보' : 'First move'}</span>
-                  <span className="text-[var(--text-soft)]">{recommendedTask ? recommendedTask.estimateLabel : '--'}</span>
-                </div>
+              <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
+                <span>{locale === 'ko' ? '출근 상태' : 'Clock state'}</span>
+                <Badge variant="outline" className={outlineBadgeClass}>
+                  {activeWorkSession
+                    ? locale === 'ko'
+                      ? `${activeWorkStartLabel} 시작`
+                      : `Started ${activeWorkStartLabel}`
+                    : locale === 'ko'
+                      ? '대기'
+                      : 'Ready'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
+                <span>{locale === 'ko' ? '고정 작업' : 'Pinned anchors'}</span>
+                <span className="font-mono text-foreground">{pinnedCount}/3</span>
+              </div>
+              <div className="flex items-center justify-between rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm">
+                <span>{locale === 'ko' ? '첫 작업 후보' : 'First move'}</span>
+                <span className="text-[var(--text-soft)]">{recommendedTask ? recommendedTask.estimateLabel : '--'}</span>
               </div>
             </div>
           </div>
@@ -160,11 +160,11 @@ export function StartDayPanel({
           <Button onClick={onClockIn} disabled={activeWorkSession} className="rounded-[18px]">
             {locale === 'ko' ? '출근하고 시작' : 'Clock in'}
           </Button>
-          {tasks[0] ? (
+          {recommendedTask ? (
             <Button
               variant="outline"
               className="rounded-[18px]"
-              onClick={() => onStartTimer(tasks[0].id, tasks[0].estimatedMinutes)}
+              onClick={() => onStartTimer(recommendedTask.id, recommendedTask.estimatedMinutes)}
             >
               {locale === 'ko' ? '첫 작업 바로 시작' : 'Start first task'}
             </Button>
@@ -179,7 +179,9 @@ export function StartDayPanel({
               {locale === 'ko' ? '오늘의 핵심 3개' : 'Top 3 today'}
             </p>
             <p className="mt-1 text-sm text-[var(--text-soft)]">
-              {locale === 'ko' ? '가장 먼저 밀어야 할 작업부터 세워둡니다.' : 'Keep only the tasks that should anchor the day.'}
+              {locale === 'ko'
+                ? '가장 먼저 밀어야 할 작업만 남겨두고 시작 순서를 정합니다.'
+                : 'Keep only the tasks that should anchor the day and set the first move.'}
             </p>
           </div>
           <Badge variant="outline" className={outlineBadgeClass}>

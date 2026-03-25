@@ -1,7 +1,7 @@
 import { CheckCircle2, LoaderCircle, Pause, Play, Square, Trash2 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 
@@ -117,20 +117,30 @@ export function FocusSidebar({
                 <Badge className="bg-[var(--surface-soft)] text-foreground">{timerTone}</Badge>
               </div>
 
+              <div className="mt-5">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{remainingLabel}</p>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <p className="font-mono text-[36px] leading-none tracking-[-0.05em] text-foreground xl:text-[40px]">
+                    {remainingClock}
+                  </p>
+                  <div className="text-right text-xs text-[var(--text-muted)]">
+                    <p>
+                      {estimateLabel} {estimateClock}
+                    </p>
+                    <p>
+                      {elapsedLabel} {elapsedClock}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="mt-4 flex items-center justify-between text-xs text-[var(--text-muted)]">
                 <span>{runningNow}</span>
                 <span>{Math.min(Math.round(progress), 100)}%</span>
               </div>
               <Progress value={progress} className="mt-2" />
 
-              <div className="mt-4 rounded-[18px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-4">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{remainingLabel}</p>
-                <p className="mt-2 font-mono text-[28px] leading-none tracking-[-0.05em] text-foreground">
-                  {remainingClock}
-                </p>
-              </div>
-
-              <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+              <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
                 <MetricSurface label={elapsedLabel} value={elapsedClock} />
                 <MetricSurface label={estimateLabel} value={estimateClock} />
               </div>
