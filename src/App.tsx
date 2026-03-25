@@ -74,11 +74,12 @@ type TimerState = {
   estimatedMinutes: number
   elapsedSeconds: number
   isPaused: boolean
+  segmentStartedAt: string | null
 }
 
 type NextTaskPromptState = {
   completedTaskTitle: string
-  nextTaskId: string
+  candidateTaskIds: string[]
   kind: 'resume' | 'next'
 }
 
@@ -99,6 +100,14 @@ type FlowEvent = {
   at: string
 }
 
+type FocusSession = {
+  id: string
+  taskId: string
+  startedAt: string
+  endedAt: string
+  durationSeconds: number
+}
+
 const STORAGE_KEYS = {
   tasks: 'taskbrick.v2.tasks',
   completions: 'taskbrick.v2.completions',
@@ -106,6 +115,7 @@ const STORAGE_KEYS = {
   highScore: 'taskbrick.v2.highScore',
   profile: 'taskbrick.v2.profile',
   flowEvents: 'taskbrick.v2.flowEvents',
+  focusSessions: 'taskbrick.v2.focusSessions',
   locale: 'taskbrick.locale',
   theme: 'taskbrick.theme',
 }
@@ -115,6 +125,7 @@ const EMPTY_COMPLETIONS: TaskCompletion[] = []
 const EMPTY_DAILY_SCORES: DailyScore[] = []
 const EMPTY_HIGH_SCORE = 0
 const EMPTY_FLOW_EVENTS: FlowEvent[] = []
+const EMPTY_FOCUS_SESSIONS: FocusSession[] = []
 const EMPTY_PROFILE: UserProfile = {
   ...seedProfile,
   currentStreak: 0,
@@ -284,6 +295,64 @@ function parseDraftInput(title: string, locale: Locale) {
   }
 }
 
+function createFocusSession(timer: TimerState, endedAt = new Date().toISOString()): FocusSession | null {
+  if (!timer.segmentStartedAt) return null
+
+  const durationSeconds = Math.max(
+    0,
+    Math.round((new Date(endedAt).getTime() - new Date(timer.segmentStartedAt).getTime()) / 1000),
+  )
+
+  if (durationSeconds <= 0) return null
+
+  return {
+    id: `focus-${timer.taskId}-${endedAt.replaceAll(/[:.]/g, '-')}`,
+    taskId: timer.taskId,
+    startedAt: timer.segmentStartedAt,
+    endedAt,
+    durationSeconds,
+  }
+}
+
+function buildHourlyFocusSessions(
+  sessions: FocusSession[],
+  selectedDate: Date,
+  timezone: string,
+): number[] {
+  const bins = Array.from({ length: 24 }, () => 0)
+  const dayKey = getDateKey(selectedDate, timezone)
+
+  for (const session of sessions) {
+    const sessionKey = getDateKey(session.startedAt, timezone)
+    if (sessionKey !== dayKey) continue
+
+    let cursor = new Date(session.startedAt).getTime()
+    const end = new Date(session.endedAt).getTime()
+
+    while (cursor < end) {
+      const current = new Date(cursor)
+      const hour = current.getHours()
+      const nextHour = new Date(current)
+      nextHour.setMinutes(0, 0, 0)
+      nextHour.setHours(hour + 1)
+      const segmentEnd = Math.min(nextHour.getTime(), end)
+
+      bins[hour] += Math.max(0, Math.round((segmentEnd - cursor) / 1000))
+      cursor = segmentEnd
+    }
+  }
+
+  return bins
+}
+
+function formatShortTime(timestamp: string, locale: Locale, timezone: string): string {
+  return new Intl.DateTimeFormat(locale === 'ko' ? 'ko-KR' : 'en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(timestamp))
+}
+
 function loadStoredValue<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
 
@@ -358,10 +427,18 @@ function getPriorityRank(priority: TaskPriority): number {
   return rank[priority]
 }
 
-function getNextTaskSuggestion(tasks: Task[], completedTaskId: string): Task | null {
-  const available = tasks
+function getNextTaskChoices(tasks: Task[], completedTaskId: string, pausedSessions: PausedSession[]): Task[] {
+  const pausedTaskIds = pausedSessions.map((session) => session.taskId)
+  const sortedOpenTasks = tasks
     .filter((task) => task.id !== completedTaskId && task.status !== 'done' && task.status !== 'archived')
     .sort((left, right) => {
+      const leftIsPaused = pausedTaskIds.includes(left.id)
+      const rightIsPaused = pausedTaskIds.includes(right.id)
+
+      if (leftIsPaused !== rightIsPaused) {
+        return leftIsPaused ? -1 : 1
+      }
+
       if (left.status !== right.status) {
         return left.status === 'in_progress' ? -1 : 1
       }
@@ -380,7 +457,7 @@ function getNextTaskSuggestion(tasks: Task[], completedTaskId: string): Task | n
       return left.estimatedMinutes - right.estimatedMinutes
     })
 
-  return available[0] ?? null
+  return sortedOpenTasks.slice(0, 4)
 }
 
 function getPausedSessionLabel(mode: PausedSession['mode'], locale: Locale): string {
@@ -466,6 +543,9 @@ function App() {
   const [flowEvents, setFlowEvents] = useState<FlowEvent[]>(() =>
     loadStoredValue(STORAGE_KEYS.flowEvents, EMPTY_FLOW_EVENTS),
   )
+  const [focusSessions, setFocusSessions] = useState<FocusSession[]>(() =>
+    loadStoredValue(STORAGE_KEYS.focusSessions, EMPTY_FOCUS_SESSIONS),
+  )
   const [profile, setProfile] = useState<UserProfile>(() =>
     loadStoredValue(STORAGE_KEYS.profile, EMPTY_PROFILE),
   )
@@ -536,10 +616,28 @@ function App() {
   const inboxTasks = tasks.filter((task) => task.status === 'todo' && matchesSelectedDate(task))
   const doneTasks = tasks.filter((task) => completedTaskIdsForSelectedDate.has(task.id))
   const selectedScheduledCount = tasks.filter((task) => matchesSelectedDate(task)).length
+  const selectedFocusSessions = focusSessions
+    .filter((session) => getDateKey(session.startedAt, profile.timezone) === selectedDateKey)
+    .sort((left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime())
+  const selectedTrackedFocusSeconds = selectedFocusSessions.reduce(
+    (sum, session) => sum + session.durationSeconds,
+    0,
+  )
+  const selectedTrackedFocusMinutes = Math.max(0, Math.round(selectedTrackedFocusSeconds / 60))
+  const selectedHourlyFocus = buildHourlyFocusSessions(selectedFocusSessions, selectedDate, profile.timezone)
+  const selectedActiveHours = selectedHourlyFocus
+    .map((seconds, hour) => ({ hour, seconds }))
+    .filter((entry) => entry.seconds > 0)
+  const firstFocusSession = selectedFocusSessions[0] ?? null
+  const lastFocusSession = selectedFocusSessions.length > 0 ? selectedFocusSessions.at(-1) ?? null : null
+  const displayFocusMinutes = selectedTrackedFocusMinutes > 0 ? selectedTrackedFocusMinutes : todayScore.focusMinutes
   const timerTask = activeTimer ? tasks.find((task) => task.id === activeTimer.taskId) ?? null : null
-  const promptedNextTask = nextTaskPrompt
-    ? tasks.find((task) => task.id === nextTaskPrompt.nextTaskId) ?? null
-    : null
+  const promptedNextTasks = nextTaskPrompt
+    ? nextTaskPrompt.candidateTaskIds
+        .map((taskId) => tasks.find((task) => task.id === taskId) ?? null)
+        .filter((task): task is Task => Boolean(task))
+    : []
+  const promptedNextTask = promptedNextTasks[0] ?? null
   const pausedTaskDetails = pausedSessions
     .slice()
     .sort((left, right) => {
@@ -622,7 +720,7 @@ function App() {
   const topMetrics = [
     { label: copy.todayScore, value: todayScore.totalScore.toString(), accent: true },
     { label: copy.highScore, value: highScore.toString(), accent: false },
-    { label: copy.focusMinutes, value: `${todayScore.focusMinutes}m`, accent: false },
+    { label: copy.focusMinutes, value: `${displayFocusMinutes}m`, accent: false },
     { label: copy.level, value: `${profile.level}`, accent: false },
   ]
 
@@ -640,8 +738,9 @@ function App() {
     window.localStorage.setItem(STORAGE_KEYS.dailyScores, JSON.stringify(dailyScores))
     window.localStorage.setItem(STORAGE_KEYS.highScore, JSON.stringify(highScore))
     window.localStorage.setItem(STORAGE_KEYS.flowEvents, JSON.stringify(flowEvents))
+    window.localStorage.setItem(STORAGE_KEYS.focusSessions, JSON.stringify(focusSessions))
     window.localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile))
-  }, [completions, dailyScores, flowEvents, highScore, profile, tasks])
+  }, [completions, dailyScores, flowEvents, focusSessions, highScore, profile, tasks])
 
   const playRewardSound = useEffectEvent((nextReward: RewardBurst) => {
     const AudioCtx =
@@ -695,11 +794,57 @@ function App() {
     return () => window.clearInterval(interval)
   }, [activeTimer])
 
+  function trackFocusSegment(timer: TimerState | null, endedAt = new Date().toISOString()) {
+    if (!timer) return
+
+    const nextSession = createFocusSession(timer, endedAt)
+    if (!nextSession) return
+
+    setFocusSessions((current) => [...current, nextSession])
+  }
+
+  function handleTogglePauseTimer() {
+    if (!activeTimer) return
+
+    const now = new Date().toISOString()
+
+    if (activeTimer.isPaused) {
+      setActiveTimer((current) =>
+        current
+          ? {
+              ...current,
+              isPaused: false,
+              segmentStartedAt: now,
+            }
+          : current,
+      )
+      return
+    }
+
+    trackFocusSegment(activeTimer, now)
+    setActiveTimer((current) =>
+      current
+        ? {
+            ...current,
+            isPaused: true,
+            segmentStartedAt: null,
+          }
+        : current,
+    )
+  }
+
+  function handleStopActiveTimer() {
+    if (!activeTimer) return
+
+    trackFocusSegment(activeTimer)
+    setActiveTimer(null)
+  }
+
   function handleCompleteTask(taskId: string) {
     const task = tasks.find((candidate) => candidate.id === taskId)
     if (!task || task.status === 'done') return
-    const suggestedNextTask = getNextTaskSuggestion(tasks, taskId)
-    const pausedCandidate = pausedSessions[0] ?? null
+    const nextTaskChoices = getNextTaskChoices(tasks, taskId, pausedSessions)
+    const activeSegment = activeTimer?.taskId === taskId ? activeTimer : null
 
     const completedAt = new Date().toISOString()
     const actualMinutes =
@@ -741,6 +886,9 @@ function App() {
     }
 
     startTransition(() => {
+      if (activeSegment) {
+        trackFocusSegment(activeSegment, completedAt)
+      }
       setTasks((current) =>
         current.map((item) => (item.id === taskId ? { ...item, status: 'done' } : item)),
       )
@@ -758,17 +906,13 @@ function App() {
         highScore: nextDailyScore.totalScore > highScore,
       })
       setNextTaskPrompt(
-        pausedCandidate
+        nextTaskChoices.length > 0
           ? {
               completedTaskTitle: getTaskTitle(task, locale),
-              nextTaskId: pausedCandidate.taskId,
-              kind: 'resume',
-            }
-          : suggestedNextTask
-          ? {
-              completedTaskTitle: getTaskTitle(task, locale),
-              nextTaskId: suggestedNextTask.id,
-              kind: 'next',
+              candidateTaskIds: nextTaskChoices.map((candidate) => candidate.id),
+              kind: pausedSessions.some((session) => session.taskId === nextTaskChoices[0]?.id)
+                ? 'resume'
+                : 'next',
             }
           : null,
       )
@@ -794,6 +938,7 @@ function App() {
       estimatedMinutes,
       elapsedSeconds: 0,
       isPaused: false,
+      segmentStartedAt: new Date().toISOString(),
     })
 
     setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
@@ -806,17 +951,19 @@ function App() {
     )
   }
 
-  function handleStartSuggestedTask() {
-    if (!promptedNextTask) {
+  function handleStartSuggestedTask(taskId: string) {
+    const selectedTask = tasks.find((task) => task.id === taskId)
+
+    if (!selectedTask) {
       setNextTaskPrompt(null)
       return
     }
 
-    const pausedSession = pausedSessions.find((session) => session.taskId === promptedNextTask.id)
+    const pausedSession = pausedSessions.find((session) => session.taskId === selectedTask.id)
 
     if (pausedSession) {
       setPausedSessions((current) =>
-        current.filter((session) => session.taskId !== promptedNextTask.id),
+        current.filter((session) => session.taskId !== selectedTask.id),
       )
       setFlowEvents((current) => [...current, createFlowEvent('resume')])
       setActiveTimer({
@@ -824,10 +971,11 @@ function App() {
         estimatedMinutes: pausedSession.estimatedMinutes,
         elapsedSeconds: pausedSession.elapsedSeconds,
         isPaused: false,
+        segmentStartedAt: new Date().toISOString(),
       })
       setIsDockCollapsed(false)
     } else {
-      handleStartTimer(promptedNextTask.id, promptedNextTask.estimatedMinutes)
+      handleStartTimer(selectedTask.id, selectedTask.estimatedMinutes)
     }
 
     setNextTaskPrompt(null)
@@ -838,10 +986,13 @@ function App() {
     const resumeSession = pausedSessions.find((session) => session.taskId === switchPrompt.nextTaskId)
     const switchedAt = new Date().toISOString()
 
+    trackFocusSegment(activeTimer, switchedAt)
+
     setPausedSessions((current) => [
       {
         ...activeTimer,
         isPaused: true,
+        segmentStartedAt: null,
         mode,
         pausedAt: switchedAt,
       },
@@ -857,6 +1008,7 @@ function App() {
       estimatedMinutes: resumeSession?.estimatedMinutes ?? switchPrompt.estimatedMinutes,
       elapsedSeconds: resumeSession?.elapsedSeconds ?? 0,
       isPaused: false,
+      segmentStartedAt: switchedAt,
     })
     setTasks((current) =>
       current.map((task) =>
@@ -897,6 +1049,7 @@ function App() {
       estimatedMinutes: pausedSession.estimatedMinutes,
       elapsedSeconds: pausedSession.elapsedSeconds,
       isPaused: false,
+      segmentStartedAt: new Date().toISOString(),
     })
     setIsDockCollapsed(false)
     setNextTaskPrompt(null)
@@ -904,7 +1057,14 @@ function App() {
 
   function handleRemovePausedTask(taskId: string) {
     setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
-    setNextTaskPrompt((current) => (current?.nextTaskId === taskId ? null : current))
+    setNextTaskPrompt((current) =>
+      current
+        ? {
+            ...current,
+            candidateTaskIds: current.candidateTaskIds.filter((candidateId) => candidateId !== taskId),
+          }
+        : null,
+    )
     setSwitchPrompt((current) => (current?.nextTaskId === taskId ? null : current))
   }
 
@@ -979,6 +1139,7 @@ function App() {
 
       setTasks(nextTasks)
       setCompletions(nextCompletions)
+      setFocusSessions((current) => current.filter((session) => session.taskId !== taskId))
       setDailyScores(nextDailyScores)
       setHighScore(nextHighScore)
       setProfile((current) => ({
@@ -987,7 +1148,14 @@ function App() {
         level: 1 + Math.floor(Math.max(0, current.lifetimeScore - removedCompletionScore) / 700),
       }))
       setPausedSessions((current) => current.filter((session) => session.taskId !== taskId))
-      setNextTaskPrompt((current) => (current?.nextTaskId === taskId ? null : current))
+      setNextTaskPrompt((current) =>
+        current
+          ? {
+              ...current,
+              candidateTaskIds: current.candidateTaskIds.filter((candidateId) => candidateId !== taskId),
+            }
+          : null,
+      )
       setActiveTimer((current) => (current?.taskId === taskId ? null : current))
     })
   }
@@ -999,6 +1167,7 @@ function App() {
       setDailyScores(EMPTY_DAILY_SCORES)
       setHighScore(EMPTY_HIGH_SCORE)
       setFlowEvents(EMPTY_FLOW_EVENTS)
+      setFocusSessions(EMPTY_FOCUS_SESSIONS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -1024,6 +1193,7 @@ function App() {
       setDailyScores(EMPTY_DAILY_SCORES)
       setHighScore(EMPTY_HIGH_SCORE)
       setFlowEvents(EMPTY_FLOW_EVENTS)
+      setFocusSessions(EMPTY_FOCUS_SESSIONS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -1095,7 +1265,7 @@ function App() {
             <CardContent className="grid gap-3 pt-0">
               <SidebarMetric icon={Sparkles} label={copy.todayScore} value={todayScore.totalScore.toString()} />
               <SidebarMetric icon={Flame} label={copy.currentCombo} value={`x${todayScore.comboPeak || 1}`} />
-              <SidebarMetric icon={Clock3} label={copy.focusMinutes} value={`${todayScore.focusMinutes}m`} />
+              <SidebarMetric icon={Clock3} label={copy.focusMinutes} value={`${displayFocusMinutes}m`} />
               <SidebarMetric icon={CalendarClock} label={copy.taskCountLabel} value={openTasks.length.toString()} />
             </CardContent>
           </Card>
@@ -1290,7 +1460,7 @@ function App() {
                               : copy.navIntegrations}
                     </Badge>
                     <Badge variant="outline" className={outlineBadgeClass}>
-                      {todayScore.focusMinutes}m
+                      {displayFocusMinutes}m
                     </Badge>
                     <Badge variant="outline" className={outlineBadgeClass}>
                       x{todayScore.comboPeak || 1}
@@ -1693,11 +1863,7 @@ function App() {
                   <div className="grid grid-cols-2 gap-2">
                     <Button
                       variant="outline"
-                      onClick={() =>
-                        setActiveTimer((current) =>
-                          current ? { ...current, isPaused: !current.isPaused } : current,
-                        )
-                      }
+                      onClick={handleTogglePauseTimer}
                     >
                       {activeTimer.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
                       {activeTimer.isPaused ? copy.resume : copy.pause}
@@ -1718,7 +1884,7 @@ function App() {
                       <CheckCircle2 className="size-3.5" />
                       {copy.finish}
                     </Button>
-                    <Button variant="secondary" onClick={() => setActiveTimer(null)}>
+                    <Button variant="secondary" onClick={handleStopActiveTimer}>
                       <Square className="size-3.5" />
                       {copy.stop}
                     </Button>
@@ -1793,7 +1959,7 @@ function App() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <ReportMetricSurface label={copy.focusMinutes} value={`${todayReport.focusMinutes}m`} />
+                <ReportMetricSurface label={copy.focusMinutes} value={`${displayFocusMinutes}m`} />
                 <ReportMetricSurface label={copy.onTime} value={todayReport.onTimeCount.toString()} />
                 <ReportMetricSurface label={copy.overtime} value={todayReport.overtimeCount.toString()} />
                 <ReportMetricSurface
@@ -1817,6 +1983,66 @@ function App() {
                   </li>
                 ))}
               </ul>
+            </CardContent>
+          </Card>
+
+          <Card className={shellCardClass}>
+            <CardHeader className="border-b border-[var(--line)] pb-4">
+              <CardTitle className="text-lg font-semibold tracking-[-0.04em]">
+                {locale === 'ko' ? '시간대 집중' : 'Focus by hour'}
+              </CardTitle>
+              <CardDescription>
+                {locale === 'ko'
+                  ? '타이머를 실제로 눌러서 집중한 시간만 집계합니다.'
+                  : 'Only time tracked by the focus timer is included.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <MetricSurface
+                  label={locale === 'ko' ? '첫 집중' : 'First focus'}
+                  value={firstFocusSession ? formatShortTime(firstFocusSession.startedAt, locale, profile.timezone) : '--:--'}
+                />
+                <MetricSurface
+                  label={locale === 'ko' ? '마지막 집중' : 'Last focus'}
+                  value={lastFocusSession ? formatShortTime(lastFocusSession.endedAt, locale, profile.timezone) : '--:--'}
+                />
+                <MetricSurface
+                  label={locale === 'ko' ? '실집중' : 'Tracked'}
+                  value={`${displayFocusMinutes}m`}
+                />
+              </div>
+
+              {selectedActiveHours.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedActiveHours.map(({ hour, seconds }) => {
+                    const width = Math.max(12, Math.round((seconds / 3600) * 100))
+
+                    return (
+                      <div key={hour} className="grid grid-cols-[44px_minmax(0,1fr)_56px] items-center gap-3">
+                        <span className="font-mono text-xs text-[var(--text-muted)]">
+                          {hour.toString().padStart(2, '0')}:00
+                        </span>
+                        <div className="h-2.5 overflow-hidden rounded-full bg-[var(--surface-soft)]">
+                          <div
+                            className="h-full rounded-full bg-amber-300/80"
+                            style={{ width: `${Math.min(width, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-right font-mono text-xs text-foreground">
+                          {Math.round(seconds / 60)}m
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[var(--surface)] p-4 text-sm text-[var(--text-muted)]">
+                  {locale === 'ko'
+                    ? '아직 이 날짜의 집중 세션이 없습니다.'
+                    : 'No tracked focus sessions for this date yet.'}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1926,18 +2152,14 @@ function App() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    setActiveTimer((current) =>
-                      current ? { ...current, isPaused: !current.isPaused } : current,
-                    )
-                  }
+                  onClick={handleTogglePauseTimer}
                 >
                   {activeTimer.isPaused ? copy.resume : copy.pause}
                 </Button>
                 <Button size="sm" onClick={() => handleCompleteTask(activeTimer.taskId)}>
                   {copy.finish}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => setActiveTimer(null)}>
+                <Button variant="secondary" size="sm" onClick={handleStopActiveTimer}>
                   {copy.stop}
                 </Button>
               </div>
@@ -1946,9 +2168,9 @@ function App() {
         </div>
       ) : null}
 
-      {nextTaskPrompt && promptedNextTask ? (
+      {nextTaskPrompt && promptedNextTasks.length > 0 ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-2xl">
+          <div className="w-full max-w-xl rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-2xl">
             <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
               {locale === 'ko' ? '다음 할 일' : 'Next up'}
             </p>
@@ -1985,11 +2207,46 @@ function App() {
               </p>
             </div>
 
+            {promptedNextTasks.length > 1 ? (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  {locale === 'ko' ? '다른 후보' : 'Other options'}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {promptedNextTasks.slice(1).map((task) => {
+                    const pausedSession = pausedSessions.find((session) => session.taskId === task.id)
+
+                    return (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => handleStartSuggestedTask(task.id)}
+                        className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3 text-left transition-colors hover:bg-[var(--surface-soft)]"
+                      >
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {getTaskTitle(task, locale)}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                          {pausedSession
+                            ? locale === 'ko'
+                              ? `이어 하기 · ${formatClock(pausedSession.elapsedSeconds)}`
+                              : `Resume · ${formatClock(pausedSession.elapsedSeconds)}`
+                            : locale === 'ko'
+                              ? `예상 ${task.estimatedMinutes}분`
+                              : `Estimate ${task.estimatedMinutes}m`}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setNextTaskPrompt(null)}>
                 {locale === 'ko' ? '나중에' : 'Later'}
               </Button>
-              <Button onClick={handleStartSuggestedTask}>
+              <Button onClick={() => promptedNextTask && handleStartSuggestedTask(promptedNextTask.id)}>
                 {locale === 'ko' ? '바로 시작' : 'Start now'}
               </Button>
             </div>
@@ -2169,7 +2426,7 @@ function TaskRow({
   return (
     <div
       className={cn(
-        'grid gap-4 rounded-3xl border px-4 py-4 transition-colors xl:grid-cols-[minmax(0,1fr)_160px_204px_110px]',
+        'group grid gap-4 rounded-3xl border px-4 py-4 transition-colors xl:grid-cols-[minmax(0,1fr)_160px_240px_88px]',
         isActive
           ? 'border-amber-300/25 bg-amber-300/7'
           : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]',
@@ -2231,29 +2488,35 @@ function TaskRow({
         {task.status !== 'done' ? (
           <>
             <Button
-              variant={isActive ? 'secondary' : 'outline'}
-              size="sm"
+              variant={isActive ? 'secondary' : 'default'}
+              className="h-10 justify-between rounded-2xl px-4"
               onClick={() => onStartTimer(task.id, task.estimatedMinutes)}
             >
-              {copy.estimate} {task.estimatedMinutes}m
+              <span>{locale === 'ko' ? '시작' : 'Start'}</span>
+              <span className="font-mono text-sm">{task.estimatedMinutes}m</span>
             </Button>
-            <div className="grid grid-cols-[72px_1fr] gap-2">
-              <Input
-                type="number"
-                min={5}
-                max={240}
-                step={5}
-                value={customMinutes}
-                onChange={(event) => setCustomMinutes(Number(event.target.value))}
-                className="h-7"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onStartTimer(task.id, Math.max(5, customMinutes))}
-              >
-                {copy.startTimer}
-              </Button>
+            <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                {locale === 'ko' ? '직접 시간' : 'Custom time'}
+              </p>
+              <div className="mt-2 grid grid-cols-[84px_1fr] gap-2">
+                <Input
+                  type="number"
+                  min={5}
+                  max={240}
+                  step={5}
+                  value={customMinutes}
+                  onChange={(event) => setCustomMinutes(Number(event.target.value))}
+                  className="h-9 rounded-xl border-[var(--line)] bg-transparent text-center font-mono"
+                />
+                <Button
+                  variant="outline"
+                  className="h-9 rounded-xl"
+                  onClick={() => onStartTimer(task.id, Math.max(5, customMinutes))}
+                >
+                  {locale === 'ko' ? `${customMinutes}분 시작` : `Start ${customMinutes}m`}
+                </Button>
+              </div>
             </div>
           </>
         ) : (
@@ -2269,9 +2532,14 @@ function TaskRow({
             {copy.completeTask}
           </Button>
         ) : null}
-        <Button variant="ghost" className="min-h-10" onClick={() => onDelete(task.id)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="min-h-10 self-end rounded-2xl opacity-30 transition-opacity hover:opacity-100 group-hover:opacity-60"
+          onClick={() => onDelete(task.id)}
+          aria-label={copy.deleteTask}
+        >
           <Trash2 className="size-3.5" />
-          {copy.deleteTask}
         </Button>
       </div>
     </div>
