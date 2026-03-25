@@ -108,6 +108,27 @@ type FocusSession = {
   durationSeconds: number
 }
 
+type WorkSession = {
+  id: string
+  clockInAt: string
+  clockOutAt: string | null
+}
+
+type ClockOutSummary = {
+  clockInAt: string
+  clockOutAt: string
+  workSeconds: number
+  focusSeconds: number
+  focusRatio: number
+  completedCount: number
+  totalScore: number
+  switchCount: number
+  interruptCount: number
+  firstFocusAt: string | null
+  lastFocusAt: string | null
+  peakHour: number | null
+}
+
 const STORAGE_KEYS = {
   tasks: 'taskbrick.v2.tasks',
   completions: 'taskbrick.v2.completions',
@@ -116,6 +137,7 @@ const STORAGE_KEYS = {
   profile: 'taskbrick.v2.profile',
   flowEvents: 'taskbrick.v2.flowEvents',
   focusSessions: 'taskbrick.v2.focusSessions',
+  workSessions: 'taskbrick.v2.workSessions',
   locale: 'taskbrick.locale',
   theme: 'taskbrick.theme',
 }
@@ -126,6 +148,7 @@ const EMPTY_DAILY_SCORES: DailyScore[] = []
 const EMPTY_HIGH_SCORE = 0
 const EMPTY_FLOW_EVENTS: FlowEvent[] = []
 const EMPTY_FOCUS_SESSIONS: FocusSession[] = []
+const EMPTY_WORK_SESSIONS: WorkSession[] = []
 const EMPTY_PROFILE: UserProfile = {
   ...seedProfile,
   currentStreak: 0,
@@ -319,13 +342,11 @@ function buildHourlyFocusSessions(
   selectedDate: Date,
   timezone: string,
 ): number[] {
+  void selectedDate
+  void timezone
   const bins = Array.from({ length: 24 }, () => 0)
-  const dayKey = getDateKey(selectedDate, timezone)
 
   for (const session of sessions) {
-    const sessionKey = getDateKey(session.startedAt, timezone)
-    if (sessionKey !== dayKey) continue
-
     let cursor = new Date(session.startedAt).getTime()
     const end = new Date(session.endedAt).getTime()
 
@@ -491,6 +512,59 @@ function formatClock(seconds: number): string {
   return [minutes, secs].map((value) => value.toString().padStart(2, '0')).join(':')
 }
 
+function getDayBounds(date: Date) {
+  const start = new Date(date)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  return {
+    start,
+    end,
+  }
+}
+
+function getWorkSessionDurationSeconds(session: WorkSession, now = Date.now()) {
+  const end = session.clockOutAt ? new Date(session.clockOutAt).getTime() : now
+  return Math.max(0, Math.round((end - new Date(session.clockInAt).getTime()) / 1000))
+}
+
+function getOverlapSeconds(
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string,
+) {
+  const start = Math.max(new Date(startA).getTime(), new Date(startB).getTime())
+  const end = Math.min(new Date(endA).getTime(), new Date(endB).getTime())
+  return Math.max(0, Math.round((end - start) / 1000))
+}
+
+function sliceFocusSessionToDay(session: FocusSession, date: Date): FocusSession | null {
+  const { start, end } = getDayBounds(date)
+  const clippedStart = Math.max(new Date(session.startedAt).getTime(), start.getTime())
+  const clippedEnd = Math.min(new Date(session.endedAt).getTime(), end.getTime())
+  const durationSeconds = Math.max(0, Math.round((clippedEnd - clippedStart) / 1000))
+
+  if (durationSeconds <= 0) return null
+
+  return {
+    ...session,
+    startedAt: new Date(clippedStart).toISOString(),
+    endedAt: new Date(clippedEnd).toISOString(),
+    durationSeconds,
+  }
+}
+
+function getWorkSessionOverlapForDay(session: WorkSession, date: Date, now = Date.now()) {
+  const { start, end } = getDayBounds(date)
+  return getOverlapSeconds(
+    session.clockInAt,
+    session.clockOutAt ?? new Date(now).toISOString(),
+    start.toISOString(),
+    end.toISOString(),
+  )
+}
+
 function getPriorityOptionLabel(priority: TaskPriority, locale: Locale): string {
   const labels = {
     ko: {
@@ -546,6 +620,9 @@ function App() {
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>(() =>
     loadStoredValue(STORAGE_KEYS.focusSessions, EMPTY_FOCUS_SESSIONS),
   )
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>(() =>
+    loadStoredValue(STORAGE_KEYS.workSessions, EMPTY_WORK_SESSIONS),
+  )
   const [profile, setProfile] = useState<UserProfile>(() =>
     loadStoredValue(STORAGE_KEYS.profile, EMPTY_PROFILE),
   )
@@ -567,6 +644,8 @@ function App() {
   const [rewardBurst, setRewardBurst] = useState<RewardBurst | null>(null)
   const [nextTaskPrompt, setNextTaskPrompt] = useState<NextTaskPromptState | null>(null)
   const [switchPrompt, setSwitchPrompt] = useState<SwitchPromptState | null>(null)
+  const [clockOutSummary, setClockOutSummary] = useState<ClockOutSummary | null>(null)
+  const [workTimerTick, setWorkTimerTick] = useState(() => Date.now())
 
   const copy = uiCopy[locale]
   const deferredSearch = useDeferredValue(search)
@@ -617,21 +696,41 @@ function App() {
   const doneTasks = tasks.filter((task) => completedTaskIdsForSelectedDate.has(task.id))
   const selectedScheduledCount = tasks.filter((task) => matchesSelectedDate(task)).length
   const selectedFocusSessions = focusSessions
-    .filter((session) => getDateKey(session.startedAt, profile.timezone) === selectedDateKey)
+    .map((session) => sliceFocusSessionToDay(session, selectedDate))
+    .filter((session): session is FocusSession => Boolean(session))
     .sort((left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime())
   const selectedTrackedFocusSeconds = selectedFocusSessions.reduce(
     (sum, session) => sum + session.durationSeconds,
     0,
   )
-  const selectedTrackedFocusMinutes = Math.max(0, Math.round(selectedTrackedFocusSeconds / 60))
   const selectedHourlyFocus = buildHourlyFocusSessions(selectedFocusSessions, selectedDate, profile.timezone)
   const selectedActiveHours = selectedHourlyFocus
     .map((seconds, hour) => ({ hour, seconds }))
     .filter((entry) => entry.seconds > 0)
   const firstFocusSession = selectedFocusSessions[0] ?? null
   const lastFocusSession = selectedFocusSessions.length > 0 ? selectedFocusSessions.at(-1) ?? null : null
-  const displayFocusMinutes = selectedTrackedFocusMinutes > 0 ? selectedTrackedFocusMinutes : todayScore.focusMinutes
+  const displayFocusSeconds =
+    selectedTrackedFocusSeconds > 0 ? selectedTrackedFocusSeconds : todayScore.focusMinutes * 60
+  const displayFocusLabel = formatClock(displayFocusSeconds)
   const timerTask = activeTimer ? tasks.find((task) => task.id === activeTimer.taskId) ?? null : null
+  const activeWorkSession =
+    workSessions
+      .slice()
+      .reverse()
+      .find((session) => session.clockOutAt === null) ?? null
+  const selectedWorkSessions = workSessions
+    .filter((session) => getWorkSessionOverlapForDay(session, selectedDate, workTimerTick) > 0)
+    .sort((left, right) => new Date(left.clockInAt).getTime() - new Date(right.clockInAt).getTime())
+  const selectedWorkSeconds = selectedWorkSessions.reduce(
+    (sum, session) => sum + getWorkSessionOverlapForDay(session, selectedDate, workTimerTick),
+    0,
+  )
+  const displayWorkLabel = formatClock(selectedWorkSeconds)
+  const selectedFocusRatio = selectedWorkSeconds > 0 ? Math.round((selectedTrackedFocusSeconds / selectedWorkSeconds) * 100) : 0
+  const activeWorkElapsedSeconds = activeWorkSession ? getWorkSessionDurationSeconds(activeWorkSession, workTimerTick) : 0
+  const activeWorkStartLabel = activeWorkSession
+    ? formatShortTime(activeWorkSession.clockInAt, locale, profile.timezone)
+    : '--:--'
   const promptedNextTasks = nextTaskPrompt
     ? nextTaskPrompt.candidateTaskIds
         .map((taskId) => tasks.find((task) => task.id === taskId) ?? null)
@@ -720,7 +819,7 @@ function App() {
   const topMetrics = [
     { label: copy.todayScore, value: todayScore.totalScore.toString(), accent: true },
     { label: copy.highScore, value: highScore.toString(), accent: false },
-    { label: copy.focusMinutes, value: `${displayFocusMinutes}m`, accent: false },
+    { label: copy.focusMinutes, value: displayFocusLabel, accent: false },
     { label: copy.level, value: `${profile.level}`, accent: false },
   ]
 
@@ -739,8 +838,9 @@ function App() {
     window.localStorage.setItem(STORAGE_KEYS.highScore, JSON.stringify(highScore))
     window.localStorage.setItem(STORAGE_KEYS.flowEvents, JSON.stringify(flowEvents))
     window.localStorage.setItem(STORAGE_KEYS.focusSessions, JSON.stringify(focusSessions))
+    window.localStorage.setItem(STORAGE_KEYS.workSessions, JSON.stringify(workSessions))
     window.localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile))
-  }, [completions, dailyScores, flowEvents, focusSessions, highScore, profile, tasks])
+  }, [completions, dailyScores, flowEvents, focusSessions, highScore, profile, tasks, workSessions])
 
   const playRewardSound = useEffectEvent((nextReward: RewardBurst) => {
     const AudioCtx =
@@ -794,6 +894,26 @@ function App() {
     return () => window.clearInterval(interval)
   }, [activeTimer])
 
+  useEffect(() => {
+    setTasks((current) =>
+      current.some((task) => task.status === 'in_progress')
+        ? current.map((task) =>
+            task.status === 'in_progress' ? { ...task, status: 'todo' } : task,
+          )
+        : current,
+    )
+  }, [])
+
+  useEffect(() => {
+    if (!activeWorkSession) return undefined
+
+    const interval = window.setInterval(() => {
+      setWorkTimerTick(Date.now())
+    }, 1000)
+
+    return () => window.clearInterval(interval)
+  }, [activeWorkSession])
+
   function trackFocusSegment(timer: TimerState | null, endedAt = new Date().toISOString()) {
     if (!timer) return
 
@@ -837,7 +957,108 @@ function App() {
     if (!activeTimer) return
 
     trackFocusSegment(activeTimer)
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === activeTimer.taskId && task.status === 'in_progress'
+          ? { ...task, status: 'todo' }
+          : task,
+      ),
+    )
     setActiveTimer(null)
+  }
+
+  function handleClockIn() {
+    if (activeWorkSession) return
+
+    const now = new Date().toISOString()
+    setWorkSessions((current) => [
+      ...current,
+      {
+        id: `work-${now.replaceAll(/[:.]/g, '-')}`,
+        clockInAt: now,
+        clockOutAt: null,
+      },
+    ])
+    setWorkTimerTick(Date.now())
+    setClockOutSummary(null)
+  }
+
+  function handleClockOut() {
+    if (!activeWorkSession) return
+
+    const clockOutAt = new Date().toISOString()
+    const nextDayKey = getDateKey(activeWorkSession.clockInAt, profile.timezone)
+    const nextWorkSeconds = getWorkSessionDurationSeconds(
+      { ...activeWorkSession, clockOutAt },
+      workTimerTick,
+    )
+    const activeFocusSegment = activeTimer ? createFocusSession(activeTimer, clockOutAt) : null
+    const allFocusSessions = activeFocusSegment ? [...focusSessions, activeFocusSegment] : focusSessions
+    const focusSessionsInRange = allFocusSessions.filter(
+      (session) => getOverlapSeconds(session.startedAt, session.endedAt, activeWorkSession.clockInAt, clockOutAt) > 0,
+    )
+    const focusSecondsInRange = focusSessionsInRange.reduce(
+      (sum, session) =>
+        sum + getOverlapSeconds(session.startedAt, session.endedAt, activeWorkSession.clockInAt, clockOutAt),
+      0,
+    )
+    const completionsForSessionDay = completions.filter(
+      (completion) => getDateKey(completion.completedAt, profile.timezone) === nextDayKey,
+    )
+    const dailyScoreForSessionDay =
+      dailyScores.find((score) => score.date === nextDayKey) ??
+      {
+        ...calculateDailyScore(completionsForSessionDay, highScore),
+        date: nextDayKey,
+      }
+    const flowEventsForSessionDay = flowEvents.filter(
+      (event) => getDateKey(event.at, profile.timezone) === nextDayKey,
+    )
+    const hourlyFocus = buildHourlyFocusSessions(
+      focusSessionsInRange,
+      new Date(activeWorkSession.clockInAt),
+      profile.timezone,
+    )
+    const peakHourEntry = hourlyFocus
+      .map((seconds, hour) => ({ hour, seconds }))
+      .sort((left, right) => right.seconds - left.seconds)[0]
+
+    if (activeTimer) {
+      trackFocusSegment(activeTimer, clockOutAt)
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === activeTimer.taskId && task.status === 'in_progress'
+            ? { ...task, status: 'todo' }
+            : task,
+        ),
+      )
+      setActiveTimer(null)
+    }
+
+    setWorkSessions((current) =>
+      current.map((session) =>
+        session.id === activeWorkSession.id
+          ? {
+              ...session,
+              clockOutAt,
+            }
+          : session,
+      ),
+    )
+    setClockOutSummary({
+      clockInAt: activeWorkSession.clockInAt,
+      clockOutAt,
+      workSeconds: nextWorkSeconds,
+      focusSeconds: focusSecondsInRange,
+      focusRatio: nextWorkSeconds > 0 ? Math.round((focusSecondsInRange / nextWorkSeconds) * 100) : 0,
+      completedCount: completionsForSessionDay.length,
+      totalScore: dailyScoreForSessionDay.totalScore,
+      switchCount: flowEventsForSessionDay.filter((event) => event.type !== 'resume').length,
+      interruptCount: flowEventsForSessionDay.filter((event) => event.type === 'interrupt').length,
+      firstFocusAt: focusSessionsInRange[0]?.startedAt ?? null,
+      lastFocusAt: focusSessionsInRange.length > 0 ? (focusSessionsInRange.at(-1)?.endedAt ?? null) : null,
+      peakHour: peakHourEntry && peakHourEntry.seconds > 0 ? peakHourEntry.hour : null,
+    })
   }
 
   function handleCompleteTask(taskId: string) {
@@ -1168,6 +1389,7 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setFlowEvents(EMPTY_FLOW_EVENTS)
       setFocusSessions(EMPTY_FOCUS_SESSIONS)
+      setWorkSessions(EMPTY_WORK_SESSIONS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -1175,6 +1397,7 @@ function App() {
       setRewardBurst(null)
       setNextTaskPrompt(null)
       setSwitchPrompt(null)
+      setClockOutSummary(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -1194,6 +1417,7 @@ function App() {
       setHighScore(EMPTY_HIGH_SCORE)
       setFlowEvents(EMPTY_FLOW_EVENTS)
       setFocusSessions(EMPTY_FOCUS_SESSIONS)
+      setWorkSessions(EMPTY_WORK_SESSIONS)
       setProfile({ ...EMPTY_PROFILE })
       setActiveTimer(null)
       setPausedSessions([])
@@ -1201,6 +1425,7 @@ function App() {
       setRewardBurst(null)
       setNextTaskPrompt(null)
       setSwitchPrompt(null)
+      setClockOutSummary(null)
       setCurrentView('today')
       setStatusFilter('all')
       setPriorityFilter('all')
@@ -1265,8 +1490,71 @@ function App() {
             <CardContent className="grid gap-3 pt-0">
               <SidebarMetric icon={Sparkles} label={copy.todayScore} value={todayScore.totalScore.toString()} />
               <SidebarMetric icon={Flame} label={copy.currentCombo} value={`x${todayScore.comboPeak || 1}`} />
-              <SidebarMetric icon={Clock3} label={copy.focusMinutes} value={`${displayFocusMinutes}m`} />
+              <SidebarMetric icon={Clock3} label={copy.focusMinutes} value={displayFocusLabel} />
               <SidebarMetric icon={CalendarClock} label={copy.taskCountLabel} value={openTasks.length.toString()} />
+            </CardContent>
+          </Card>
+
+          <Card className={quietCardClass}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-sm font-medium">
+                  {locale === 'ko' ? '근무 시간' : 'Workday'}
+                </CardTitle>
+                <Badge variant="outline" className={outlineBadgeClass}>
+                  {activeWorkSession ? (locale === 'ko' ? '근무 중' : 'Clocked in') : locale === 'ko' ? '오프' : 'Off'}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <SidebarMetric
+                  icon={CalendarClock}
+                  label={locale === 'ko' ? '출근' : 'Clock in'}
+                  value={activeWorkSession ? activeWorkStartLabel : '--:--'}
+                />
+                <SidebarMetric
+                  icon={Clock3}
+                  label={locale === 'ko' ? '근무 누적' : 'Elapsed'}
+                  value={activeWorkSession ? formatClock(activeWorkElapsedSeconds) : formatClock(selectedWorkSeconds)}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                      {locale === 'ko' ? '실집중 비율' : 'Focus ratio'}
+                    </p>
+                    <p className="mt-2 font-mono text-lg leading-none text-foreground">
+                      {selectedWorkSeconds > 0 ? `${selectedFocusRatio}%` : '--'}
+                    </p>
+                  </div>
+                  <div className="text-right text-xs text-[var(--text-muted)]">
+                    <p>{locale === 'ko' ? `실집중 ${displayFocusLabel}` : `Focus ${displayFocusLabel}`}</p>
+                    <p>{locale === 'ko' ? `근무 ${displayWorkLabel}` : `Work ${displayWorkLabel}`}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={handleClockIn} disabled={Boolean(activeWorkSession)}>
+                  {locale === 'ko' ? '출근' : 'Clock in'}
+                </Button>
+                <Button variant="outline" onClick={handleClockOut} disabled={!activeWorkSession}>
+                  {locale === 'ko' ? '퇴근' : 'Clock out'}
+                </Button>
+              </div>
+
+              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                {activeWorkSession
+                  ? locale === 'ko'
+                    ? '근무 시간은 따로 흐르고, 집중 시간은 스타트를 누른 작업만 집계됩니다.'
+                    : 'Workday time keeps running separately. Focus time only counts while a task timer is running.'
+                  : locale === 'ko'
+                    ? '출근을 누르면 근무 시간이 따로 기록되고, 퇴근 시 요약 보고서가 열립니다.'
+                    : 'Clock in starts a separate workday timer. Clock out opens a short daily report.'}
+              </p>
             </CardContent>
           </Card>
 
@@ -1460,10 +1748,13 @@ function App() {
                               : copy.navIntegrations}
                     </Badge>
                     <Badge variant="outline" className={outlineBadgeClass}>
-                      {displayFocusMinutes}m
+                      {displayFocusLabel}
                     </Badge>
                     <Badge variant="outline" className={outlineBadgeClass}>
                       x{todayScore.comboPeak || 1}
+                    </Badge>
+                    <Badge variant="outline" className={outlineBadgeClass}>
+                      {locale === 'ko' ? '근무' : 'Work'} {activeWorkSession ? formatClock(activeWorkElapsedSeconds) : displayWorkLabel}
                     </Badge>
                   </div>
                   <CardDescription className="hidden">
@@ -1959,7 +2250,7 @@ function App() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <ReportMetricSurface label={copy.focusMinutes} value={`${displayFocusMinutes}m`} />
+                <ReportMetricSurface label={copy.focusMinutes} value={displayFocusLabel} />
                 <ReportMetricSurface label={copy.onTime} value={todayReport.onTimeCount.toString()} />
                 <ReportMetricSurface label={copy.overtime} value={todayReport.overtimeCount.toString()} />
                 <ReportMetricSurface
@@ -2009,7 +2300,7 @@ function App() {
                 />
                 <MetricSurface
                   label={locale === 'ko' ? '실집중' : 'Tracked'}
-                  value={`${displayFocusMinutes}m`}
+                  value={displayFocusLabel}
                 />
               </div>
 
@@ -2030,7 +2321,7 @@ function App() {
                           />
                         </div>
                         <span className="text-right font-mono text-xs text-foreground">
-                          {Math.round(seconds / 60)}m
+                          {Math.max(1, Math.ceil(seconds / 60))}m
                         </span>
                       </div>
                     )
@@ -2283,6 +2574,110 @@ function App() {
             <div className="mt-3 flex justify-end">
               <Button variant="ghost" onClick={() => setSwitchPrompt(null)}>
                 {locale === 'ko' ? '취소' : 'Cancel'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {clockOutSummary ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-3xl border border-[var(--line)] bg-[var(--panel-strong)] p-5 shadow-2xl">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '퇴근 리포트' : 'Clock-out report'}
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-2xl font-semibold tracking-[-0.04em] text-foreground">
+                  {locale === 'ko' ? '오늘 근무를 마쳤습니다.' : 'Workday closed.'}
+                </p>
+                <p className="mt-2 text-sm text-[var(--text-muted)]">
+                  {formatShortTime(clockOutSummary.clockInAt, locale, profile.timezone)} -{' '}
+                  {formatShortTime(clockOutSummary.clockOutAt, locale, profile.timezone)}
+                </p>
+              </div>
+              <Badge variant="outline" className="w-fit border-amber-300/20 bg-amber-300/10 text-amber-200">
+                {locale === 'ko'
+                  ? `집중 비율 ${clockOutSummary.focusRatio}%`
+                  : `Focus ratio ${clockOutSummary.focusRatio}%`}
+              </Badge>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <ReportMetricSurface
+                label={locale === 'ko' ? '근무 시간' : 'Workday'}
+                value={formatClock(clockOutSummary.workSeconds)}
+              />
+              <ReportMetricSurface
+                label={locale === 'ko' ? '실집중' : 'Tracked focus'}
+                value={formatClock(clockOutSummary.focusSeconds)}
+              />
+              <ReportMetricSurface
+                label={locale === 'ko' ? '완료' : 'Completed'}
+                value={clockOutSummary.completedCount.toString()}
+              />
+              <ReportMetricSurface
+                label={locale === 'ko' ? '점수' : 'Score'}
+                value={clockOutSummary.totalScore.toString()}
+              />
+              <ReportMetricSurface
+                label={locale === 'ko' ? '전환' : 'Switches'}
+                value={clockOutSummary.switchCount.toString()}
+              />
+              <ReportMetricSurface
+                label={locale === 'ko' ? '끼어들기' : 'Interrupts'}
+                value={clockOutSummary.interruptCount.toString()}
+              />
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    {locale === 'ko' ? '첫 집중' : 'First focus'}
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {clockOutSummary.firstFocusAt
+                      ? formatShortTime(clockOutSummary.firstFocusAt, locale, profile.timezone)
+                      : '--:--'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    {locale === 'ko' ? '마지막 집중' : 'Last focus'}
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {clockOutSummary.lastFocusAt
+                      ? formatShortTime(clockOutSummary.lastFocusAt, locale, profile.timezone)
+                      : '--:--'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                    {locale === 'ko' ? '집중 피크' : 'Peak hour'}
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {clockOutSummary.peakHour !== null
+                      ? `${clockOutSummary.peakHour.toString().padStart(2, '0')}:00`
+                      : '--:--'}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm leading-relaxed text-[var(--text-soft)]">
+                {clockOutSummary.focusRatio >= 50
+                  ? locale === 'ko'
+                    ? '오늘은 근무 시간 대비 실제 집중 시간이 꽤 높았습니다.'
+                    : 'You spent a healthy share of the day in focused work.'
+                  : locale === 'ko'
+                    ? '근무 시간은 길었지만, 실제 집중 시간은 상대적으로 짧았습니다.'
+                    : 'You were around for a while, but your tracked focus time stayed relatively low.'}
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <Button onClick={() => setClockOutSummary(null)}>
+                {locale === 'ko' ? '닫기' : 'Close'}
               </Button>
             </div>
           </div>
