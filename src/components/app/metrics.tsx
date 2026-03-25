@@ -13,13 +13,13 @@ export function SidebarMetric({
   value: string
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-[16px] border border-[var(--line)] bg-[var(--surface)] px-3 py-3">
-      <div className="flex size-8 items-center justify-center rounded-[12px] bg-[var(--surface-soft)] text-[var(--text-soft)]">
+    <div className="flex items-center gap-3.5 rounded-[18px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3.5">
+      <div className="flex size-9 items-center justify-center rounded-[13px] bg-[var(--surface-soft)] text-[var(--text-soft)]">
         <Icon className="size-3.5" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{label}</p>
-        <p className="mt-1 font-mono text-[15px] leading-none text-foreground">{value}</p>
+        <p className="mt-1.5 font-mono text-[15px] leading-none text-foreground">{value}</p>
       </div>
     </div>
   )
@@ -37,7 +37,7 @@ export function TopMetric({
   return (
     <div
       className={cn(
-        'rounded-[18px] border px-4 py-4',
+        'rounded-[20px] border px-5 py-4.5',
         accent
           ? 'border-amber-300/24 bg-amber-300/8 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.04)]'
           : 'border-[var(--line)] bg-[var(--surface)]',
@@ -51,9 +51,9 @@ export function TopMetric({
 
 export function MetricSurface({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[16px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+    <div className="rounded-[18px] border border-[var(--line)] bg-[var(--surface)] px-4.5 py-3.5">
       <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">{label}</p>
-      <p className="mt-2 font-mono text-lg leading-none text-foreground">{value}</p>
+      <p className="mt-2.5 font-mono text-lg leading-none text-foreground">{value}</p>
     </div>
   )
 }
@@ -70,7 +70,7 @@ export function ReportMetricSurface({
   return (
     <div
       className={cn(
-        'rounded-[16px] border border-[var(--line)] bg-[var(--surface)] px-4 py-4',
+        'rounded-[18px] border border-[var(--line)] bg-[var(--surface)] px-4.5 py-4.5',
         className,
       )}
     >
@@ -92,8 +92,8 @@ export function ComposerField({
   children: ReactNode
 }) {
   return (
-    <div className="space-y-2.5">
-      <div className="space-y-1">
+    <div className="space-y-3">
+      <div className="space-y-1.5">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
           {label}
         </p>

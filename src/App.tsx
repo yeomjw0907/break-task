@@ -1799,76 +1799,6 @@ function App() {
 
           <Card className={quietCardClass}>
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-sm font-medium">
-                  {locale === 'ko' ? '근무 시간' : 'Workday'}
-                </CardTitle>
-                <Badge
-                  variant="outline"
-                  className={
-                    activeWorkSession
-                      ? 'border-amber-300/22 bg-amber-300/10 text-amber-200 shadow-none'
-                      : outlineBadgeClass
-                  }
-                >
-                  {workdayStateLabel}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-0">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <SidebarMetric
-                  icon={CalendarClock}
-                  label={locale === 'ko' ? '출근' : 'Clock in'}
-                  value={activeWorkSession ? activeWorkStartLabel : '--:--'}
-                />
-                <SidebarMetric
-                  icon={Clock3}
-                  label={locale === 'ko' ? '근무 누적' : 'Elapsed'}
-                  value={activeWorkSession ? formatClock(activeWorkElapsedSeconds) : formatClock(selectedWorkSeconds)}
-                />
-              </div>
-
-              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
-                      {locale === 'ko' ? '실집중 비율' : 'Focus ratio'}
-                    </p>
-                    <p className="mt-2 font-mono text-lg leading-none text-foreground">
-                      {selectedWorkSeconds > 0 ? `${selectedFocusRatio}%` : '--'}
-                    </p>
-                  </div>
-                  <div className="text-right text-xs text-[var(--text-muted)]">
-                    <p>{locale === 'ko' ? `실집중 ${displayFocusLabel}` : `Focus ${displayFocusLabel}`}</p>
-                    <p>{locale === 'ko' ? `근무 ${displayWorkLabel}` : `Work ${displayWorkLabel}`}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button onClick={handleClockIn} disabled={Boolean(activeWorkSession)}>
-                  {locale === 'ko' ? '출근' : 'Clock in'}
-                </Button>
-                <Button variant="outline" onClick={handleClockOut} disabled={!activeWorkSession}>
-                  {locale === 'ko' ? '퇴근' : 'Clock out'}
-                </Button>
-              </div>
-
-              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                {activeWorkSession
-                  ? locale === 'ko'
-                    ? '근무 시간은 따로 흐르고, 실집중 시간은 타이머를 켠 작업만 집계됩니다.'
-                    : 'Workday time keeps running separately. Focus time only counts while a task timer is running.'
-                  : locale === 'ko'
-                    ? '출근을 누르면 근무 시간이 기록되고, 퇴근하면 하루 요약이 열립니다.'
-                    : 'Clock in starts a separate workday timer. Clock out opens a short daily report.'}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className={quietCardClass}>
-            <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">{copy.language}</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-2 pt-0">
@@ -2065,10 +1995,43 @@ function App() {
                     <Badge variant="outline" className={outlineBadgeClass}>
                       x{todayScore.comboPeak || 1}
                     </Badge>
-                    <Badge variant="outline" className={outlineBadgeClass}>
-                      {locale === 'ko' ? '근무' : 'Work'} {activeWorkSession ? formatClock(activeWorkElapsedSeconds) : displayWorkLabel}
-                    </Badge>
                   </div>
+                  {currentView === 'today' ? (
+                    <div className="mt-3 flex flex-col gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="flex flex-wrap items-center gap-2.5 text-sm">
+                        <Badge
+                          variant="outline"
+                          className={
+                            activeWorkSession
+                              ? 'border-amber-300/22 bg-amber-300/10 text-amber-200 shadow-none'
+                              : outlineBadgeClass
+                          }
+                        >
+                          {workdayStateLabel}
+                        </Badge>
+                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
+                          {locale === 'ko' ? '출근' : 'Clock in'} {activeWorkSession ? activeWorkStartLabel : '--:--'}
+                        </span>
+                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
+                          {locale === 'ko' ? '근무 누적' : 'Elapsed'}{' '}
+                          {activeWorkSession ? formatClock(activeWorkElapsedSeconds) : displayWorkLabel}
+                        </span>
+                        <span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[var(--text-soft)]">
+                          {locale === 'ko' ? '실집중 비율' : 'Focus ratio'}{' '}
+                          {selectedWorkSeconds > 0 ? `${selectedFocusRatio}%` : '--'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 xl:flex xl:items-center">
+                        <Button onClick={handleClockIn} disabled={Boolean(activeWorkSession)} size="sm">
+                          {locale === 'ko' ? '출근' : 'Clock in'}
+                        </Button>
+                        <Button variant="outline" onClick={handleClockOut} disabled={!activeWorkSession} size="sm">
+                          {locale === 'ko' ? '퇴근' : 'Clock out'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <CardDescription className="hidden">
                     {currentView === 'today'
                       ? `${openTasks.length} · ${copy.taskCountLabel}`
@@ -2258,21 +2221,20 @@ function App() {
                 <ScrollArea className="h-[calc(100vh-22rem)] pr-3">
                   <div className="space-y-3">
                     {currentView === 'today' ? (
-                      <StartDayPanel
-                        locale={locale}
-                        activeWorkSession={Boolean(activeWorkSession)}
-                        activeWorkStartLabel={activeWorkStartLabel}
+                    <StartDayPanel
+                      locale={locale}
+                      activeWorkSession={Boolean(activeWorkSession)}
+                      activeWorkStartLabel={activeWorkStartLabel}
                         plannedWorkMinutes={plannedWorkMinutes}
                         selectedOpenMinutes={selectedOpenMinutes}
                         budgetProgress={budgetProgress}
                         budgetDeltaMinutes={budgetDeltaMinutes}
-                        tasks={startDayTaskItems}
-                        pinnedCount={focusTaskIds.length}
-                        outlineBadgeClass={outlineBadgeClass}
-                        onClockIn={handleClockIn}
-                        onStartTimer={handleStartTimer}
-                        onToggleFocusTask={toggleFocusTask}
-                        onChangeBudget={setPlannedWorkMinutes}
+                      tasks={startDayTaskItems}
+                      pinnedCount={focusTaskIds.length}
+                      outlineBadgeClass={outlineBadgeClass}
+                      onStartTimer={handleStartTimer}
+                      onToggleFocusTask={toggleFocusTask}
+                      onChangeBudget={setPlannedWorkMinutes}
                       />
                     ) : null}
 

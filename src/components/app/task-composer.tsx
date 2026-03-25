@@ -55,36 +55,34 @@ export function TaskComposer({
   return (
     <form
       onSubmit={onSubmit}
-      className="grid w-full gap-4 rounded-[24px] border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
+      className="grid w-full gap-5 rounded-[26px] border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] xl:p-6"
     >
-      <div className="flex flex-col gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-3 md:flex-row md:items-end">
-        <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-[11px] font-medium tracking-[0.12em] text-[var(--text-muted)] uppercase">
+      <div className="flex flex-col gap-4 rounded-[22px] border border-[var(--line)] bg-[var(--panel-strong)] p-4 md:flex-row md:items-end xl:p-5">
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
             {locale === 'ko' ? '작업 제목' : 'Task'}
           </p>
           <Input
             value={draftTitle}
             onChange={(event) => onTitleChange(event.target.value)}
             placeholder={locale === 'ko' ? '다음 할 일을 한 줄로 입력' : 'Write the next task in one line'}
-            className="h-12 rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)] px-4 text-base"
+            className="h-13 rounded-[18px] border-[var(--line)] bg-[var(--surface-soft)] px-4 text-base"
           />
         </div>
 
-        <Button type="submit" className="h-12 rounded-[16px] px-6 md:min-w-30">
+        <Button type="submit" className="h-13 rounded-[18px] px-6 md:min-w-32">
           {addTaskLabel}
         </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-[160px_180px_minmax(0,1fr)]">
+      <div className="grid gap-4 md:grid-cols-[170px_190px_minmax(0,1fr)]">
         <ComposerField
           label={locale === 'ko' ? '예상 시간' : 'Estimate'}
           hint={locale === 'ko' ? '집중할 시간' : 'Focus window'}
         >
-          <div className="space-y-2 rounded-[16px] border border-[var(--line)] bg-[var(--surface-soft)] px-3 py-2.5">
+          <div className="space-y-3 rounded-[18px] border border-[var(--line)] bg-[var(--surface-soft)] px-4 py-3.5">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-base text-foreground">
-                +{effectiveDraftMinutes.toString().padStart(3, '0')}
-              </span>
+              <span className="font-mono text-base text-foreground">+{effectiveDraftMinutes.toString().padStart(3, '0')}</span>
               <span className="text-sm text-[var(--text-muted)]">{locale === 'ko' ? '분' : 'min'}</span>
               <Input
                 type="number"
@@ -103,7 +101,7 @@ export function TaskComposer({
                   type="button"
                   onClick={() => onMinutesChange(minutes)}
                   className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                    'rounded-full border px-3 py-1.5 text-xs transition-colors',
                     draftMinutes === minutes
                       ? 'border-amber-300/30 bg-amber-300/12 text-amber-200'
                       : 'border-[var(--line)] text-[var(--text-muted)] hover:bg-[var(--surface-soft)]',
@@ -122,7 +120,7 @@ export function TaskComposer({
           hint={locale === 'ko' ? '점수 가중치' : 'Scoring weight'}
         >
           <Select value={draftPriority} onValueChange={(value) => onPriorityChange(value as TaskPriority)}>
-            <SelectTrigger className="h-[54px] rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)]">
+            <SelectTrigger className="h-[58px] rounded-[18px] border-[var(--line)] bg-[var(--surface-soft)] px-4">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -139,7 +137,7 @@ export function TaskComposer({
           label={locale === 'ko' ? '처리 시점' : 'When'}
           hint={locale === 'ko' ? '오늘 처리할지 선택' : 'Today or later'}
         >
-          <div className="grid grid-cols-3 gap-2 rounded-[16px] border border-[var(--line)] bg-[var(--surface-soft)] p-1.5">
+          <div className="grid grid-cols-3 gap-2 rounded-[18px] border border-[var(--line)] bg-[var(--surface-soft)] p-1.5">
             {([
               ['today', locale === 'ko' ? '오늘' : 'Today'],
               ['tomorrow', locale === 'ko' ? '내일' : 'Tomorrow'],
@@ -150,7 +148,7 @@ export function TaskComposer({
                 type="button"
                 onClick={() => onHorizonChange(value)}
                 className={cn(
-                  'rounded-2xl px-3 py-2.5 text-sm font-medium transition-colors',
+                  'rounded-2xl px-3 py-3 text-sm font-medium transition-colors',
                   draftHorizon === value
                     ? 'bg-amber-300 text-zinc-950'
                     : 'text-[var(--text-soft)] hover:bg-[var(--surface-soft)]',
@@ -163,15 +161,15 @@ export function TaskComposer({
         </ComposerField>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1">
+      <div className="flex flex-wrap items-center gap-2.5 text-xs text-[var(--text-muted)]">
+        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5">
           {locale === 'ko' ? '예상 시간' : 'Estimate'} · {effectiveDraftMinutes}
           {locale === 'ko' ? '분' : 'm'}
         </span>
-        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1">
+        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5">
           {locale === 'ko' ? '우선순위' : 'Priority'} · {getPriorityLabel(effectiveDraftPriority, locale)}
         </span>
-        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1">
+        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5">
           {locale === 'ko' ? '처리 시점' : 'When'} ·{' '}
           {locale === 'ko'
             ? effectiveDraftHorizon === 'today'
@@ -185,12 +183,12 @@ export function TaskComposer({
                 ? 'Tomorrow'
                 : 'Later'}
         </span>
-        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1">
+        <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5">
           {locale === 'ko' ? 'Enter로 바로 추가' : 'Press Enter to add'}
         </span>
       </div>
 
-      <div className="space-y-1 text-xs text-[var(--text-muted)]">
+      <div className="space-y-1.5 text-xs leading-6 text-[var(--text-muted)]">
         <p>{getPriorityHint(effectiveDraftPriority, locale)}</p>
         <p>{locale === 'ko' ? '예: 내일 45분 중요 제안서 정리' : 'Example: tomorrow 45m high proposal cleanup'}</p>
       </div>
