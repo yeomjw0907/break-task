@@ -116,7 +116,7 @@ export function SwitchTaskModal({ locale, onSwitch, onInterrupt, onClose }: Swit
         </p>
         <p className="mt-2 text-sm text-[var(--text-muted)]">
           {locale === 'ko'
-            ? '전환은 멈춘 작업 목록에 보관되고, 끼어들기는 짧은 처리로 기록됩니다.'
+            ? '전환은 멈춘 작업 목록에 남기고, 끼어들기는 짧은 급한 일로 기록합니다.'
             : 'Switch keeps it in the paused list. Interrupt marks it as a quick interruption.'}
         </p>
 
@@ -153,6 +153,9 @@ interface ClockOutSummaryModalProps {
   lastFocusValue: string
   peakHourValue: string
   interpretation: string
+  carryOverCount: string
+  reflection: string
+  onReflectionChange: (value: string) => void
   onClose: () => void
 }
 
@@ -170,6 +173,9 @@ export function ClockOutSummaryModal({
   lastFocusValue,
   peakHourValue,
   interpretation,
+  carryOverCount,
+  reflection,
+  onReflectionChange,
   onClose,
 }: ClockOutSummaryModalProps) {
   return (
@@ -224,8 +230,43 @@ export function ClockOutSummaryModal({
           <p className="mt-4 text-sm leading-relaxed text-[var(--text-soft)]">{interpretation}</p>
         </div>
 
+        <div className="mt-5 grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '내일로 넘길 일' : 'Carry over'}
+            </p>
+            <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-foreground">{carryOverCount}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+              {locale === 'ko'
+                ? '아직 끝나지 않은 작업 수입니다. 내일 첫 보드에서 다시 이어갈 수 있습니다.'
+                : 'Tasks still open and ready to continue tomorrow.'}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '한 줄 메모' : 'One-line reflection'}
+            </p>
+            <textarea
+              value={reflection}
+              onChange={(event) => onReflectionChange(event.target.value)}
+              placeholder={
+                locale === 'ko'
+                  ? '예: 오래 앉아 있었지만, 실집중은 점심 이후 2시간에 몰렸음'
+                  : 'Example: I stayed late, but the real focus only happened after lunch.'
+              }
+              className="mt-3 min-h-[112px] w-full resize-none rounded-[16px] border border-[var(--line)] bg-[var(--panel-strong)] px-4 py-3 text-sm leading-6 text-foreground outline-none transition-colors placeholder:text-[var(--text-muted)] focus-visible:border-amber-300/30"
+              maxLength={180}
+            />
+            <div className="mt-2 flex items-center justify-between text-xs text-[var(--text-muted)]">
+              <span>{locale === 'ko' ? '닫으면 자동 저장됩니다.' : 'Saved when you close.'}</span>
+              <span>{reflection.length}/180</span>
+            </div>
+          </div>
+        </div>
+
         <div className="mt-5 flex justify-end">
-          <Button onClick={onClose}>{locale === 'ko' ? '닫기' : 'Close'}</Button>
+          <Button onClick={onClose}>{locale === 'ko' ? '저장 후 닫기' : 'Save and close'}</Button>
         </div>
       </div>
     </div>

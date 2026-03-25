@@ -112,7 +112,10 @@ type WorkSession = {
   clockOutAt: string | null
 }
 
+type DailyReflectionMap = Record<string, string>
+
 type ClockOutSummary = {
+  dayKey: string
   clockInAt: string
   clockOutAt: string
   workSeconds: number
@@ -125,6 +128,7 @@ type ClockOutSummary = {
   firstFocusAt: string | null
   lastFocusAt: string | null
   peakHour: number | null
+  carryOverCount: number
 }
 
 const STORAGE_KEYS = {
@@ -136,6 +140,7 @@ const STORAGE_KEYS = {
   flowEvents: 'taskbrick.v2.flowEvents',
   focusSessions: 'taskbrick.v2.focusSessions',
   workSessions: 'taskbrick.v2.workSessions',
+  dailyReflections: 'taskbrick.v2.dailyReflections',
   workBudgetMinutes: 'taskbrick.v2.workBudgetMinutes',
   focusTaskIds: 'taskbrick.v2.focusTaskIds',
   locale: 'taskbrick.locale',
@@ -149,6 +154,7 @@ const EMPTY_HIGH_SCORE = 0
 const EMPTY_FLOW_EVENTS: FlowEvent[] = []
 const EMPTY_FOCUS_SESSIONS: FocusSession[] = []
 const EMPTY_WORK_SESSIONS: WorkSession[] = []
+const EMPTY_DAILY_REFLECTIONS: DailyReflectionMap = {}
 const EMPTY_PROFILE: UserProfile = {
   ...seedProfile,
   currentStreak: 0,
@@ -624,6 +630,9 @@ function App() {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>(() =>
     loadStoredValue(STORAGE_KEYS.workSessions, EMPTY_WORK_SESSIONS),
   )
+  const [dailyReflections, setDailyReflections] = useState<DailyReflectionMap>(() =>
+    loadStoredValue(STORAGE_KEYS.dailyReflections, EMPTY_DAILY_REFLECTIONS),
+  )
   const [profile, setProfile] = useState<UserProfile>(() =>
     loadStoredValue(STORAGE_KEYS.profile, EMPTY_PROFILE),
   )
@@ -652,6 +661,7 @@ function App() {
   const [nextTaskPrompt, setNextTaskPrompt] = useState<NextTaskPromptState | null>(null)
   const [switchPrompt, setSwitchPrompt] = useState<SwitchPromptState | null>(null)
   const [clockOutSummary, setClockOutSummary] = useState<ClockOutSummary | null>(null)
+  const [clockOutReflection, setClockOutReflection] = useState('')
   const [workTimerTick, setWorkTimerTick] = useState(() => Date.now())
 
   const copy = uiCopy[locale]
@@ -667,7 +677,6 @@ function App() {
   )
   const selectedSwitchCount = selectedFlowEvents.filter((event) => event.type !== 'resume').length
   const selectedInterruptCount = selectedFlowEvents.filter((event) => event.type === 'interrupt').length
-
   const selectedScore =
     dailyScores.find((score) => score.date === selectedDateKey) ??
     {
@@ -787,6 +796,7 @@ function App() {
       (sum, session) => sum + getWorkSessionOverlapForDay(session, day, workTimerTick),
       0,
     )
+    const dayFlowEvents = flowEvents.filter((event) => getDateKey(event.at, profile.timezone) === dayKey)
 
     return {
       day,
@@ -802,6 +812,9 @@ function App() {
       focusSeconds: dayFocusSeconds,
       workSeconds: dayWorkSeconds,
       focusRatio: dayWorkSeconds > 0 ? Math.round((dayFocusSeconds / dayWorkSeconds) * 100) : 0,
+      switchCount: dayFlowEvents.filter((event) => event.type !== 'resume').length,
+      interruptCount: dayFlowEvents.filter((event) => event.type === 'interrupt').length,
+      reflection: dailyReflections[dayKey] ?? '',
     }
   })
   const weeklyScoreTotal = weeklyReviewDays.reduce((sum, day) => sum + day.score, 0)
@@ -812,6 +825,14 @@ function App() {
     weeklyReviewDays
       .slice()
       .sort((left, right) => right.focusSeconds - left.focusSeconds)[0] ?? null
+  const bestCompletionDay =
+    weeklyReviewDays
+      .slice()
+      .sort((left, right) => right.completedCount - left.completedCount || right.score - left.score)[0] ?? null
+  const mostInterruptedDay =
+    weeklyReviewDays
+      .slice()
+      .sort((left, right) => right.interruptCount - left.interruptCount || right.switchCount - left.switchCount)[0] ?? null
   const weeklyReviewItems = weeklyReviewDays.map((day) => ({
     key: day.key,
     label: day.label,
@@ -819,6 +840,8 @@ function App() {
     focusLabel: formatClock(day.focusSeconds),
     ratioLabel: `${day.focusRatio}%`,
     scoreLabel: day.score.toString(),
+    switchLabel: locale === 'ko' ? `전환 ${day.switchCount}` : `${day.switchCount} switches`,
+    reflection: day.reflection,
     widthPercent: Math.max(
       10,
       bestFocusDay?.focusSeconds ? (day.focusSeconds / Math.max(bestFocusDay.focusSeconds, 1)) * 100 : 10,
@@ -839,6 +862,32 @@ function App() {
     : locale === 'ko'
       ? '출근과 집중 데이터가 쌓이면 주간 해석이 여기에 보입니다.'
       : 'Weekly interpretation appears once workday and focus data accumulate.'
+  const weeklyCompletionTitle = bestCompletionDay ? bestCompletionDay.label : '--'
+  const weeklyCompletionBody = bestCompletionDay
+    ? locale === 'ko'
+      ? `${bestCompletionDay.completedCount}개 완료, ${bestCompletionDay.score}점, 실집중 ${formatClock(bestCompletionDay.focusSeconds)}`
+      : `${bestCompletionDay.completedCount} done, ${bestCompletionDay.score} score, ${formatClock(bestCompletionDay.focusSeconds)} tracked`
+    : locale === 'ko'
+      ? '아직 완료 기록이 충분하지 않습니다.'
+      : 'Not enough completion data yet.'
+  const weeklyInterruptTitle = mostInterruptedDay && mostInterruptedDay.interruptCount > 0 ? mostInterruptedDay.label : '--'
+  const weeklyInterruptBody =
+    mostInterruptedDay && (mostInterruptedDay.interruptCount > 0 || mostInterruptedDay.switchCount > 0)
+      ? locale === 'ko'
+        ? `전환 ${mostInterruptedDay.switchCount}회, 끼어들기 ${mostInterruptedDay.interruptCount}회`
+        : `${mostInterruptedDay.switchCount} switches, ${mostInterruptedDay.interruptCount} interrupts`
+      : locale === 'ko'
+        ? '이번 주엔 큰 흐름 붕괴가 두드러지지 않았습니다.'
+        : 'No standout interruption spike this week.'
+  const weeklyReflectionItems = weeklyReviewDays
+    .filter((day) => day.reflection.trim().length > 0)
+    .slice(-3)
+    .reverse()
+    .map((day) => ({
+      key: day.key,
+      label: day.label,
+      text: day.reflection,
+    }))
   const activeWorkElapsedSeconds = activeWorkSession ? getWorkSessionDurationSeconds(activeWorkSession, workTimerTick) : 0
   const activeWorkStartLabel = activeWorkSession
     ? formatShortTime(activeWorkSession.clockInAt, locale, profile.timezone)
@@ -997,8 +1046,9 @@ function App() {
     window.localStorage.setItem(STORAGE_KEYS.flowEvents, JSON.stringify(flowEvents))
     window.localStorage.setItem(STORAGE_KEYS.focusSessions, JSON.stringify(focusSessions))
     window.localStorage.setItem(STORAGE_KEYS.workSessions, JSON.stringify(workSessions))
+    window.localStorage.setItem(STORAGE_KEYS.dailyReflections, JSON.stringify(dailyReflections))
     window.localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile))
-  }, [completions, dailyScores, flowEvents, focusSessions, highScore, profile, tasks, workSessions])
+  }, [completions, dailyReflections, dailyScores, flowEvents, focusSessions, highScore, profile, tasks, workSessions])
 
   const playRewardSound = useEffectEvent((nextReward: RewardBurst) => {
     const AudioCtx =
@@ -1139,6 +1189,7 @@ function App() {
     ])
     setWorkTimerTick(Date.now())
     setClockOutSummary(null)
+    setClockOutReflection('')
   }
 
   function handleClockOut() {
@@ -1172,6 +1223,7 @@ function App() {
     const flowEventsForSessionDay = flowEvents.filter(
       (event) => getDateKey(event.at, profile.timezone) === nextDayKey,
     )
+    const carryOverCount = tasks.filter((task) => task.status !== 'done' && task.status !== 'archived').length
     const hourlyFocus = buildHourlyFocusSessions(
       focusSessionsInRange,
       new Date(activeWorkSession.clockInAt),
@@ -1204,6 +1256,7 @@ function App() {
       ),
     )
     setClockOutSummary({
+      dayKey: nextDayKey,
       clockInAt: activeWorkSession.clockInAt,
       clockOutAt,
       workSeconds: nextWorkSeconds,
@@ -1216,7 +1269,33 @@ function App() {
       firstFocusAt: focusSessionsInRange[0]?.startedAt ?? null,
       lastFocusAt: focusSessionsInRange.length > 0 ? (focusSessionsInRange.at(-1)?.endedAt ?? null) : null,
       peakHour: peakHourEntry && peakHourEntry.seconds > 0 ? peakHourEntry.hour : null,
+      carryOverCount,
     })
+    setClockOutReflection(dailyReflections[nextDayKey] ?? '')
+  }
+
+  function handleSaveClockOutReflection(value: string) {
+    if (!clockOutSummary) return
+
+    const trimmed = value.trim()
+    setDailyReflections((current) => {
+      if (!trimmed) {
+        const next = { ...current }
+        delete next[clockOutSummary.dayKey]
+        return next
+      }
+
+      return {
+        ...current,
+        [clockOutSummary.dayKey]: trimmed,
+      }
+    })
+  }
+
+  function handleCloseClockOutSummary() {
+    handleSaveClockOutReflection(clockOutReflection)
+    setClockOutSummary(null)
+    setClockOutReflection('')
   }
 
   function handleCompleteTask(taskId: string) {
@@ -1864,7 +1943,7 @@ function App() {
                                 variant="outline"
                                 onClick={() => setSelectedDayOffset(-1)}
                               >
-                                {locale === 'ko' ? '?댁젣' : 'Yesterday'}
+                                {locale === 'ko' ? '어제' : 'Yesterday'}
                               </Button>
                               <Button
                                 type="button"
@@ -2062,7 +2141,12 @@ function App() {
                       days={weeklyReviewItems}
                       bestFocusTitle={weeklyBestFocusTitle}
                       bestFocusBody={weeklyBestFocusBody}
+                      bestCompletionTitle={weeklyCompletionTitle}
+                      bestCompletionBody={weeklyCompletionBody}
+                      interruptTitle={weeklyInterruptTitle}
+                      interruptBody={weeklyInterruptBody}
                       interpretation={weeklyInterpretation}
+                      reflections={weeklyReflectionItems}
                     />
 
                     {dailyScores
@@ -2114,11 +2198,13 @@ function App() {
                       <StartDayPanel
                         locale={locale}
                         activeWorkSession={Boolean(activeWorkSession)}
+                        activeWorkStartLabel={activeWorkStartLabel}
                         plannedWorkMinutes={plannedWorkMinutes}
                         selectedOpenMinutes={selectedOpenMinutes}
                         budgetProgress={budgetProgress}
                         budgetDeltaMinutes={budgetDeltaMinutes}
                         tasks={startDayTaskItems}
+                        pinnedCount={focusTaskIds.length}
                         outlineBadgeClass={outlineBadgeClass}
                         onClockIn={handleClockIn}
                         onStartTimer={handleStartTimer}
@@ -2393,7 +2479,10 @@ function App() {
                 ? '근무 시간은 길었지만, 실집중 시간은 상대적으로 짧았습니다.'
                 : 'You were around for a while, but your tracked focus time stayed relatively low.'
           }
-          onClose={() => setClockOutSummary(null)}
+          carryOverCount={clockOutSummary.carryOverCount.toString()}
+          reflection={clockOutReflection}
+          onReflectionChange={setClockOutReflection}
+          onClose={handleCloseClockOutSummary}
         />
       ) : null}
 

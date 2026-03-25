@@ -119,7 +119,7 @@ export function TaskComposer({
 
         <ComposerField
           label={locale === 'ko' ? '우선순위' : 'Priority'}
-          hint={locale === 'ko' ? '점수 기준' : 'Scoring weight'}
+          hint={locale === 'ko' ? '점수 가중치' : 'Scoring weight'}
         >
           <Select value={draftPriority} onValueChange={(value) => onPriorityChange(value as TaskPriority)}>
             <SelectTrigger className="h-[54px] rounded-[16px] border-[var(--line)] bg-[var(--surface-soft)]">

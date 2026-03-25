@@ -129,7 +129,7 @@ export function TaskRow({
                 className="h-10 rounded-[14px]"
                 onClick={() => onStartTimer(task.id, Math.max(5, customMinutes))}
               >
-                {locale === 'ko' ? `${customMinutes}분` : `${customMinutes}m`}
+                {locale === 'ko' ? `${customMinutes}분 시작` : `${customMinutes}m start`}
               </Button>
             </div>
 

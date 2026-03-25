@@ -10,6 +10,8 @@ export type WeeklyReviewDayItem = {
   focusLabel: string
   ratioLabel: string
   scoreLabel: string
+  switchLabel: string
+  reflection: string
   widthPercent: number
 }
 
@@ -23,7 +25,12 @@ export function WeeklyReviewPanel({
   days,
   bestFocusTitle,
   bestFocusBody,
+  bestCompletionTitle,
+  bestCompletionBody,
+  interruptTitle,
+  interruptBody,
   interpretation,
+  reflections,
 }: {
   locale: Locale
   outlineBadgeClass: string
@@ -34,7 +41,12 @@ export function WeeklyReviewPanel({
   days: WeeklyReviewDayItem[]
   bestFocusTitle: string
   bestFocusBody: string
+  bestCompletionTitle: string
+  bestCompletionBody: string
+  interruptTitle: string
+  interruptBody: string
   interpretation: string
+  reflections: Array<{ key: string; label: string; text: string }>
 }) {
   return (
     <div className="space-y-5">
@@ -82,6 +94,10 @@ export function WeeklyReviewPanel({
                     <span>{day.focusLabel}</span>
                     <span>{day.ratioLabel}</span>
                   </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                    <span>{day.switchLabel}</span>
+                    <span className="truncate pl-3">{day.reflection || (locale === 'ko' ? '메모 없음' : 'No note')}</span>
+                  </div>
                 </div>
                 <p className="text-right font-mono text-sm text-foreground">{day.scoreLabel}</p>
               </div>
@@ -92,7 +108,7 @@ export function WeeklyReviewPanel({
         <div className="space-y-3">
           <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
-              {locale === 'ko' ? '가장 잘 밀린 날' : 'Best focus day'}
+              {locale === 'ko' ? '가장 집중된 날' : 'Best focus day'}
             </p>
             <p className="mt-2 text-lg font-semibold text-foreground">{bestFocusTitle}</p>
             <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{bestFocusBody}</p>
@@ -100,9 +116,45 @@ export function WeeklyReviewPanel({
 
           <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '가장 많이 끝낸 날' : 'Best completion day'}
+            </p>
+            <p className="mt-2 text-lg font-semibold text-foreground">{bestCompletionTitle}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{bestCompletionBody}</p>
+          </div>
+
+          <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '흐름이 가장 흔들린 날' : 'Most interrupted day'}
+            </p>
+            <p className="mt-2 text-lg font-semibold text-foreground">{interruptTitle}</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{interruptBody}</p>
+          </div>
+
+          <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
               {locale === 'ko' ? '이번 주 해석' : 'Interpretation'}
             </p>
             <p className="mt-2 text-sm leading-7 text-[var(--text-soft)]">{interpretation}</p>
+          </div>
+
+          <div className="rounded-[20px] border border-[var(--line)] bg-[var(--panel-strong)] p-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+              {locale === 'ko' ? '최근 메모' : 'Recent reflections'}
+            </p>
+            <div className="mt-3 space-y-2">
+              {reflections.length > 0 ? (
+                reflections.map((reflection) => (
+                  <div key={reflection.key} className="rounded-[16px] border border-[var(--line)] bg-[var(--surface)] px-3 py-3">
+                    <p className="text-xs text-[var(--text-muted)]">{reflection.label}</p>
+                    <p className="mt-1 text-sm leading-6 text-[var(--text-soft)]">{reflection.text}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm leading-6 text-[var(--text-soft)]">
+                  {locale === 'ko' ? '아직 저장된 일일 메모가 없습니다.' : 'No saved daily reflections yet.'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </section>
